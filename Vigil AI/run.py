@@ -716,4 +716,5 @@ if __name__ == '__main__':
         time.sleep(1.5)
         webbrowser.open('http://127.0.0.1:5000')
     threading.Thread(target=open_browser, daemon=True).start()
-    app.run(port=5000)
+    # Binding to 0.0.0.0 makes Render able to reach it
+    app.run(host='0.0.0.0', port=5000)
