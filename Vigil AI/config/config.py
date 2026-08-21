@@ -1,15 +1,12 @@
 """
 config.py - Central configuration loader for Vigil AI.
-
-Loads static settings from .env (paths, intervals, page IDs).
-Dynamic data (API keys, page tokens) are fetched from config.json.
 """
 import os
 import json
 from dotenv import load_dotenv
 
 # ----------------------------------------------------------------------
-# 1. Load environment variables (paths, IDs, intervals)
+# 1. Load environment variables
 # ----------------------------------------------------------------------
 dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
 load_dotenv(dotenv_path)
@@ -20,14 +17,14 @@ def _get_env_var(var_name: str, default: str = None) -> str:
         raise EnvironmentError(f"Missing required environment variable: {var_name}")
     return value
 
-# Page IDs (still from .env)
+# Page IDs
 FB_PAGE_ID_URDU = _get_env_var("FB_PAGE_ID_URDU", default="")
 FB_PAGE_ID_DEALS = _get_env_var("FB_PAGE_ID_DEALS", default="")
 
 # Graph API version
 FB_GRAPH_API_VERSION = "v26.0"
 
-# File paths (Windows friendly)
+# File paths
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 FONT_PATH = os.path.join(PROJECT_ROOT, "assets", "fonts", "Jameel_Noori_Nastaliq.ttf")
 BACKGROUND_IMAGES = [
@@ -62,31 +59,22 @@ def _load_config():
     return {}
 
 def get_api_key(provider: str) -> str:
-    """Return the API key for a given provider (gemini, groq, etc.) from config.json."""
+    """Return the API key for a given provider."""
     config = _load_config()
-    return config.get('api_keys', {}).get(provider, '')
+    return config.get('api_keys', {}).get(provider, {}).get('key', '')
+
+def get_model_name(provider: str) -> str:
+    """Return the model name for a given provider."""
+    config = _load_config()
+    return config.get('api_keys', {}).get(provider, {}).get('model', '')
 
 def get_page_token(page_id: str) -> str:
-    """Return the access token for a specific page ID from config.json."""
+    """Return the access token for a specific page ID."""
     config = _load_config()
     for p in config.get('pages', []):
         if p['id'] == page_id:
             return p.get('token', '')
     return ''
 
-# ----------------------------------------------------------------------
-# 3. Legacy compatibility (optional – engines should use get_* functions)
-# ----------------------------------------------------------------------
-# GEMINI_API_KEY is now fetched via get_api_key('gemini')
-# FB_ACCESS_TOKEN_* are now fetched via get_page_token(page_id)
-# Use the functions instead of these constants.
-
 if __name__ == "__main__":
     print("Vigil AI Configuration loaded successfully.")
-    print(f"Project root: {PROJECT_ROOT}")
-    print(f"Font path: {FONT_PATH}")
-    print(f"Background images: {BACKGROUND_IMAGES}")
-    print(f"Database: {DATABASE_PATH}")
-    print(f"Log file: {LOG_FILE_PATH}")
-    print(f"Poetry interval: {POETRY_INTERVAL_HOURS} hours")
-    print(f"Deals interval: {DEALS_INTERVAL_HOURS} hours")
