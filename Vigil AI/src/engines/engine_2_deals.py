@@ -1,6 +1,7 @@
 ﻿"""
 engine_2_deals.py - Universal Text‑only Engine
 Uses per‑page settings: provider_priority, posts_per_run, post_interval
+Dynamic model names fetched from config.json via get_model_name()
 """
 import os
 import time
@@ -8,15 +9,12 @@ import re
 import json
 import requests
 from bs4 import BeautifulSoup
-from google import genai
-from google.genai import types
-from config.config import FB_PAGE_ID_DEALS, get_page_token, get_api_key
+from config.config import get_api_key, get_model_name, get_page_token, FB_PAGE_ID_DEALS
 
 # ----------------------------------------------------------------------
 # Google Custom Search (optional)
 # ----------------------------------------------------------------------
 def google_search(query, api_key, search_engine_id):
-    """Fetch top 5 URLs from Google Custom Search."""
     urls = []
     try:
         url = f"https://www.googleapis.com/customsearch/v1?key={api_key}&cx={search_engine_id}&q={query}&num=5"
@@ -64,14 +62,12 @@ def extract_city(text):
 def run_engine_2():
     print(f"🤖 [Engine 2] Searching for latest deals...")
 
-    # Get the Deals page ID and token from config
     page_id = FB_PAGE_ID_DEALS
     token = get_page_token(page_id)
     if not page_id or not token:
         print("❌ Deals page ID or token not set.")
         return
 
-    # Load config to get page settings
     CONFIG_FILE = "config.json"
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, 'r') as f:
@@ -79,7 +75,6 @@ def run_engine_2():
     else:
         config = {}
 
-    # Find the page in config
     page = None
     for p in config.get('pages', []):
         if p['id'] == page_id:
@@ -89,19 +84,16 @@ def run_engine_2():
         print(f"❌ Page {page_id} not found in config.json")
         return
 
-    # Read user settings
-    google_api_key = config.get('api_keys', {}).get('google_api')
-    google_engine_id = config.get('api_keys', {}).get('google_engine_id')
+    google_api_key = config.get('api_keys', {}).get('google_api', '')
+    google_engine_id = config.get('api_keys', {}).get('google_engine_id', '')
     search_query = page.get('google_query', 'Pakistan sale deals today')
     target_urls = page.get('urls', [])
     posts_per_run = page.get('posts_per_run', 2)
     post_interval = page.get('post_interval', 30)
 
-    # Provider priority list
     priority_list = page.get('provider_priority', 'gemini').split(',')
     priority_list = [p.strip() for p in priority_list if p.strip()]
 
-    # Add Google search results if available
     if google_api_key and google_engine_id:
         print(f"🔍 Googling: {search_query}")
         google_urls = google_search(search_query, google_api_key, google_engine_id)
@@ -113,7 +105,6 @@ def run_engine_2():
         print("⚠️ No URLs to scrape. Skipping.")
         return
 
-    # Limit URLs to process to the requested number of posts
     max_urls = min(len(target_urls), posts_per_run)
     urls_to_process = target_urls[:max_urls]
     print(f"📋 Processing up to {len(urls_to_process)} URLs")
@@ -129,7 +120,6 @@ def run_engine_2():
         city = extract_city(scraped_text)
         map_link = f"https://www.google.com/maps?q={city}" if city else None
 
-        # Build the prompt
         prompt = f"""You are a Facebook content creator. You found a page at this URL: {url}
 Here is the scraped data from the site:
 {scraped_text}
@@ -151,19 +141,20 @@ Use emojis. Keep it brief and engaging. Do NOT use hashtags.
 """
 
         formatted_post = None
-        # --- Provider Priority Loop ---
+        # --- Dynamic Provider Priority Loop ---
         for provider in priority_list:
-            api_key = config.get('api_keys', {}).get(provider)
+            api_key = get_api_key(provider)
             if not api_key:
                 print(f"⏭️ No key for {provider}, skipping...")
                 continue
             try:
                 if provider == 'groq':
                     from groq import Groq
+                    model = get_model_name('groq') or 'openai/gpt-oss-120b'
                     client = Groq(api_key=api_key)
-                    print(f"🧠 Trying Groq (Llama 3)...")
+                    print(f"🧠 Trying Groq ({model})...")
                     response = client.chat.completions.create(
-                        model="llama-3.3-70b-versatile",
+                        model=model,
                         messages=[{"role": "user", "content": prompt}]
                     )
                     formatted_post = response.choices[0].message.content
@@ -171,10 +162,11 @@ Use emojis. Keep it brief and engaging. Do NOT use hashtags.
                     break
                 elif provider == 'openai':
                     from openai import OpenAI
+                    model = get_model_name('openai') or 'gpt-4o'
                     client = OpenAI(api_key=api_key)
-                    print(f"🧠 Trying OpenAI (GPT-4o)...")
+                    print(f"🧠 Trying OpenAI ({model})...")
                     response = client.chat.completions.create(
-                        model="gpt-4o",
+                        model=model,
                         messages=[{"role": "user", "content": prompt}]
                     )
                     formatted_post = response.choices[0].message.content
@@ -182,10 +174,11 @@ Use emojis. Keep it brief and engaging. Do NOT use hashtags.
                     break
                 elif provider == 'deepseek':
                     from openai import OpenAI
+                    model = get_model_name('deepseek') or 'deepseek-chat'
                     client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-                    print(f"🧠 Trying DeepSeek (V3)...")
+                    print(f"🧠 Trying DeepSeek ({model})...")
                     response = client.chat.completions.create(
-                        model="deepseek-chat",
+                        model=model,
                         messages=[{"role": "user", "content": prompt}]
                     )
                     formatted_post = response.choices[0].message.content
@@ -193,10 +186,11 @@ Use emojis. Keep it brief and engaging. Do NOT use hashtags.
                     break
                 elif provider == 'anthropic':
                     from anthropic import Anthropic
+                    model = get_model_name('anthropic') or 'claude-sonnet-5'
                     client = Anthropic(api_key=api_key)
-                    print(f"🧠 Trying Anthropic (Claude 3.5)...")
+                    print(f"🧠 Trying Anthropic ({model})...")
                     response = client.messages.create(
-                        model="claude-3-5-sonnet-20240620",
+                        model=model,
                         max_tokens=1024,
                         messages=[{"role": "user", "content": prompt}]
                     )
@@ -205,41 +199,28 @@ Use emojis. Keep it brief and engaging. Do NOT use hashtags.
                     break
                 elif provider == 'mistral':
                     from mistralai import Mistral
+                    model = get_model_name('mistral') or 'mistral-medium-2508'
                     client = Mistral(api_key=api_key)
-                    print(f"🧠 Trying Mistral AI (Large)...")
+                    print(f"🧠 Trying Mistral ({model})...")
                     response = client.chat.complete(
-                        model="mistral-large-latest",
+                        model=model,
                         messages=[{"role": "user", "content": prompt}]
                     )
                     formatted_post = response.choices[0].message.content
                     print(f"✅ Successfully used {provider}")
                     break
                 else:  # Gemini
-                    if not genai: raise Exception("Genai library missing.")
+                    from google import genai
+                    model = get_model_name('gemini') or 'models/gemini-3.5-flash'
                     client = genai.Client(api_key=api_key)
-                    GEMINI_FALLBACKS = [
-                        'models/gemini-3.6-flash',
-                        'models/gemini-2.0-flash',
-                        'models/gemini-1.5-flash',
-                    ]
-                    for model_name in GEMINI_FALLBACKS:
-                        try:
-                            print(f"🧠 Trying Gemini model: {model_name}...")
-                            response = client.models.generate_content(
-                                model=model_name,
-                                contents=prompt
-                            )
-                            formatted_post = response.text.strip()
-                            print(f"✅ Successfully used {model_name}")
-                            break
-                        except Exception as e:
-                            print(f"❌ {model_name} failed: {e}. Trying next...")
-                            formatted_post = None
-                    if formatted_post:
-                        print(f"✅ Successfully used Gemini")
-                        break
-                    else:
-                        print("❌ All Gemini fallback models failed.")
+                    print(f"🧠 Trying Gemini ({model})...")
+                    response = client.models.generate_content(
+                        model=model,
+                        contents=prompt
+                    )
+                    formatted_post = response.text.strip()
+                    print(f"✅ Successfully used {provider}")
+                    break
             except Exception as e:
                 print(f"❌ {provider} failed: {e}, trying next...")
                 formatted_post = None
@@ -251,7 +232,6 @@ Use emojis. Keep it brief and engaging. Do NOT use hashtags.
         elif formatted_post:
             all_posts.append({'text': formatted_post, 'url': url})
 
-    # Post up to posts_per_run deals
     if not all_posts:
         print("❌ No valid posts to publish.")
         return
