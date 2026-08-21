@@ -680,6 +680,28 @@ def test_post(page_id):
             break
     return redirect(url_for('index'))
 
+@app.route('/run_scheduler')
+def run_scheduler():
+    """UptimeRobot hits this every 5 minutes. It checks if it's time to post."""
+    config = load_config()
+    now = time.time()
+    
+    for p in config['pages']:
+        # If enough time has passed (e.g., 2 hours), post!
+        if (now - p.get('last_posted', 0)) > (p['interval'] * 3600):
+            print(f"⏰ Posting for {p['id']}")
+            if is_poetry_page(p.get('brief', '')):
+                execute_engine(p)   # Engine 1
+            else:
+                if run_engine_2:
+                    run_engine_2()  # Engine 2
+                else:
+                    print("❌ Deals Engine not available.")
+            p['last_posted'] = now
+            save_config(config)
+        
+    return "Scheduler checked.", 200
+
 # --- Scheduler ---
 def bot_scheduler():
     while True:
