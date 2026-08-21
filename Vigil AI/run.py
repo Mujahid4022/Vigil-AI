@@ -45,6 +45,9 @@ except ImportError:
     Mistral = None
     MistralAPIError = Exception
 
+# Import config functions
+from config.config import get_api_key, get_model_name, get_page_token
+
 # --- Import the separate Deals Engine ---
 try:
     from src.engines.engine_2_deals import run_engine_2
@@ -55,9 +58,7 @@ except ImportError:
 CONFIG_FILE = "config.json"
 
 def update_env_token(page_id, new_token):
-    """
-    Automatically updates the .env file with a dynamic key based on page_id.
-    """
+    """Updates the .env file with a dynamic key based on page_id."""
     env_file = '.env'
     if not os.path.exists(env_file):
         return
@@ -145,15 +146,16 @@ HTML_TEMPLATE = """
             </select>
             <label>API Key</label>
             <input type="text" name="api_key" required placeholder="Enter your API key for the selected provider...">
+            <label>Model Name (Optional - leave blank for default)</label>
+            <input type="text" name="model_name" placeholder="e.g. openai/gpt-oss-120b or claude-sonnet-5">
             <button type="submit" class="btn-success" style="width:100%;">💾 Save API Key</button>
         </form>
         <div class="provider-list">
             <strong>Saved API Keys:</strong>
-            {% for provider, key in api_keys.items() %}
+            {% for provider, data in api_keys.items() %}
             <div class="provider-item">
-                <span>{{ provider.capitalize() }}</span>
+                <span>{{ provider.capitalize() }} (Model: {{ data.model or 'default' }})</span>
                 <div>
-                    <span style="font-size: 12px; color: #666;">(Key saved)</span>
                     <form method="POST" action="/delete_api_key/{{ provider }}" style="display:inline;">
                         <button type="submit" class="btn-danger" style="padding: 2px 8px; font-size: 12px;">Remove</button>
                     </form>
@@ -299,9 +301,10 @@ def add_api_key():
     config = load_config()
     provider = request.form.get('ai_provider')
     key = request.form.get('api_key').strip()
+    model = request.form.get('model_name').strip()
     if 'api_keys' not in config:
         config['api_keys'] = {}
-    config['api_keys'][provider] = key
+    config['api_keys'][provider] = {'key': key, 'model': model}
     save_config(config)
     return redirect(url_for('index'))
 
@@ -494,7 +497,7 @@ def post_to_facebook_with_image(page, caption, image_bytes):
         return False
 
 def execute_engine(page):
-    # Engine 1 (Poetry) – with provider priority loop
+    # Engine 1 (Poetry) – with dynamic provider priority and model names
     config = load_config()
     print(f"🤖 Running Engine for Page: {page['id']}")
     
@@ -523,22 +526,23 @@ def execute_engine(page):
     post_text = None
     image_prompt = None
 
-    # --- Provider Priority Loop ---
+    # --- Provider Priority Loop (Dynamic models) ---
     priority_list = page.get('provider_priority', 'gemini').split(',')
     priority_list = [p.strip() for p in priority_list if p.strip()]
 
     for provider in priority_list:
-        api_key = config.get('api_keys', {}).get(provider)
+        api_key = get_api_key(provider)
         if not api_key:
             print(f"⏭️ No key for {provider}, skipping...")
             continue
         try:
             if provider == 'groq':
                 if not Groq: raise Exception("Groq library missing.")
+                model = get_model_name('groq') or 'openai/gpt-oss-120b'  # Dynamic model
                 client = Groq(api_key=api_key)
-                print(f"🧠 Trying Groq (Llama 3)...")
+                print(f"🧠 Trying Groq ({model})...")
                 response = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model=model,
                     messages=[{"role": "user", "content": prompt}]
                 )
                 post_text = response.choices[0].message.content
@@ -547,10 +551,11 @@ def execute_engine(page):
 
             elif provider == 'openai':
                 if not OpenAI: raise Exception("OpenAI library missing.")
+                model = get_model_name('openai') or 'gpt-4o'  # Dynamic model
                 client = OpenAI(api_key=api_key)
-                print(f"🧠 Trying OpenAI (GPT-4o)...")
+                print(f"🧠 Trying OpenAI ({model})...")
                 response = client.chat.completions.create(
-                    model="gpt-4o",
+                    model=model,
                     messages=[{"role": "user", "content": prompt}]
                 )
                 post_text = response.choices[0].message.content
@@ -559,10 +564,11 @@ def execute_engine(page):
 
             elif provider == 'deepseek':
                 if not OpenAI: raise Exception("OpenAI library missing.")
+                model = get_model_name('deepseek') or 'deepseek-chat'  # Dynamic model
                 client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-                print(f"🧠 Trying DeepSeek (V3)...")
+                print(f"🧠 Trying DeepSeek ({model})...")
                 response = client.chat.completions.create(
-                    model="deepseek-chat",
+                    model=model,
                     messages=[{"role": "user", "content": prompt}]
                 )
                 post_text = response.choices[0].message.content
@@ -571,10 +577,11 @@ def execute_engine(page):
 
             elif provider == 'anthropic':
                 if not Anthropic: raise Exception("Anthropic library missing.")
+                model = get_model_name('anthropic') or 'claude-sonnet-5'  # Dynamic model
                 client = Anthropic(api_key=api_key)
-                print(f"🧠 Trying Anthropic (Claude 3.5)...")
+                print(f"🧠 Trying Anthropic ({model})...")
                 response = client.messages.create(
-                    model="claude-3-5-sonnet-20240620",
+                    model=model,
                     max_tokens=1024,
                     messages=[{"role": "user", "content": prompt}]
                 )
@@ -584,44 +591,30 @@ def execute_engine(page):
 
             elif provider == 'mistral':
                 if not Mistral: raise Exception("Mistral library missing.")
+                model = get_model_name('mistral') or 'mistral-medium-2508'  # Dynamic model
                 client = Mistral(api_key=api_key)
-                print(f"🧠 Trying Mistral AI (Large)...")
+                print(f"🧠 Trying Mistral ({model})...")
                 response = client.chat.complete(
-                    model="mistral-large-latest",
+                    model=model,
                     messages=[{"role": "user", "content": prompt}]
                 )
                 post_text = response.choices[0].message.content
                 print(f"✅ Successfully used {provider}")
                 break
 
-            else:  # Gemini (default)
+            else:  # Gemini
                 if not genai: raise Exception("Genai library missing.")
+                model = get_model_name('gemini') or 'models/gemini-3.5-flash'  # Dynamic model
                 client = genai.Client(api_key=api_key)
-                # Gemini model fallback chain
-                GEMINI_MODEL_FALLBACKS = [
-                    'models/gemini-3.6-flash',
-                    'models/gemini-2.5-flash',
-                    'models/gemini-3.5-flash',
-                    'models/gemini-2.5-flash-lite'
-                ]
-                for model_name in GEMINI_MODEL_FALLBACKS:
-                    try:
-                        print(f"🧠 Trying Gemini model: {model_name}...")
-                        response = client.models.generate_content(
-                            model=model_name,
-                            contents=prompt
-                        )
-                        post_text = response.text.strip()
-                        print(f"✅ Successfully used {model_name}")
-                        break
-                    except Exception as e:
-                        print(f"❌ {model_name} failed: {e}. Trying next...")
-                        post_text = None
-                if post_text:
-                    print(f"✅ Successfully used Gemini")
-                    break
-                else:
-                    print("❌ All Gemini fallback models failed.")
+                print(f"🧠 Trying Gemini ({model})...")
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt
+                )
+                post_text = response.text.strip()
+                print(f"✅ Successfully used {provider}")
+                break
+
         except Exception as e:
             print(f"❌ {provider} failed: {e}, trying next...")
             continue
@@ -643,7 +636,7 @@ def execute_engine(page):
         post_text = "🚀 Hello! This is Vigil AI Bot."
 
     image_bytes = None
-    gemini_key = config.get('api_keys', {}).get('gemini')
+    gemini_key = get_api_key('gemini')
     if gemini_key:
         image_bytes = generate_image(image_prompt, gemini_key)
     if not image_bytes:
@@ -716,5 +709,4 @@ if __name__ == '__main__':
         time.sleep(1.5)
         webbrowser.open('http://127.0.0.1:5000')
     threading.Thread(target=open_browser, daemon=True).start()
-    # Binding to 0.0.0.0 makes Render able to reach it
     app.run(host='0.0.0.0', port=5000)
