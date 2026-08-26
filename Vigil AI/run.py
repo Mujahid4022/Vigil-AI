@@ -2,57 +2,17 @@ import os
 import json
 import time
 import threading
-import io
 import requests
 from flask import Flask, request, render_template_string, redirect, url_for
-from bs4 import BeautifulSoup
-
-# --- AI SDK Imports ---
-try:
-    from google import genai
-    from google.genai import types
-    from google.genai.errors import APIError as GeminiAPIError
-except ImportError:
-    genai = None
-    types = None
-    GeminiAPIError = Exception
-
-try:
-    from groq import Groq
-    from groq import GroqError as GroqAPIError
-except ImportError:
-    Groq = None
-    GroqAPIError = Exception
-
-try:
-    from openai import OpenAI
-    from openai import APIError as OpenAIAPIError
-except ImportError:
-    OpenAI = None
-    OpenAIAPIError = Exception
-
-try:
-    from anthropic import Anthropic
-    from anthropic import APIError as AnthropicAPIError
-except ImportError:
-    Anthropic = None
-    AnthropicAPIError = Exception
-
-try:
-    from mistralai import Mistral
-    from mistralai import APIError as MistralAPIError
-except ImportError:
-    Mistral = None
-    MistralAPIError = Exception
+from functools import wraps
+from flask import Response
 
 # Import config functions
 from config.config import get_api_key, get_model_name, get_page_token
 
-# --- Import the separate Deals Engine ---
-try:
-    from src.engines.engine_2_deals import run_engine_2
-except ImportError:
-    run_engine_2 = None
+# --- IMPORT THE TWO UNIVERSAL ENGINES ---
+from src.engines.engine_1_urdu_poetry import run_engine_1   # Engine 1
+from src.engines.engine_2_deals import run_engine_2         # Engine 2
 
 # --- Configuration ---
 CONFIG_FILE = "config.json"
@@ -91,14 +51,32 @@ def save_config(data):
     with open(CONFIG_FILE, 'w') as f:
         json.dump(data, f, indent=4)
 
-# Helper to detect poetry pages from the brief
-def is_poetry_page(brief):
-    poetry_keywords = ['poetry', 'poem', 'urdu', 'shayari', 'nastaleeq', 'verse']
-    return any(kw in brief.lower() for kw in poetry_keywords)
-
 # --- Flask App ---
 app = Flask(__name__)
 
+# ========== AUTHENTICATION ==========
+USERNAME = "admin"
+PASSWORD = "vigilai4042"  # CHANGE THIS!
+
+def check_auth(username, password):
+    return username == USERNAME and password == PASSWORD
+
+def authenticate():
+    return Response(
+        'Login required', 401,
+        {'WWW-Authenticate': 'Basic realm="Vigil AI Control Panel"'}
+    )
+
+def requires_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.authorization
+        if not auth or not check_auth(auth.username, auth.password):
+            return authenticate()
+        return f(*args, **kwargs)
+    return decorated
+
+# ========== HTML TEMPLATE ==========
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -291,12 +269,16 @@ HTML_TEMPLATE = """
 </html>
 """
 
+# ===================== ROUTES =====================
+
 @app.route('/')
+@requires_auth
 def index():
     config = load_config()
     return render_template_string(HTML_TEMPLATE, api_keys=config.get('api_keys', {}), pages=config.get('pages', []))
 
 @app.route('/add_api_key', methods=['POST'])
+@requires_auth
 def add_api_key():
     config = load_config()
     provider = request.form.get('ai_provider')
@@ -309,6 +291,7 @@ def add_api_key():
     return redirect(url_for('index'))
 
 @app.route('/add_google_keys', methods=['POST'])
+@requires_auth
 def add_google_keys():
     config = load_config()
     google_api = request.form.get('google_api', '').strip()
@@ -321,6 +304,7 @@ def add_google_keys():
     return redirect(url_for('index'))
 
 @app.route('/delete_api_key/<provider>', methods=['POST'])
+@requires_auth
 def delete_api_key(provider):
     config = load_config()
     if provider in config.get('api_keys', {}):
@@ -329,6 +313,7 @@ def delete_api_key(provider):
     return redirect(url_for('index'))
 
 @app.route('/add_page', methods=['POST'])
+@requires_auth
 def add_page():
     config = load_config()
     if request.form.get('add_url_action'):
@@ -356,6 +341,7 @@ def add_page():
     return redirect(url_for('index'))
 
 @app.route('/edit_page/<page_id>', methods=['POST'])
+@requires_auth
 def edit_page(page_id):
     config = load_config()
     new_token = None
@@ -378,6 +364,7 @@ def edit_page(page_id):
     return redirect(url_for('index'))
 
 @app.route('/add_url/<page_id>', methods=['POST'])
+@requires_auth
 def add_url(page_id):
     config = load_config()
     new_url = request.form.get('new_url', '').strip()
@@ -389,6 +376,7 @@ def add_url(page_id):
     return redirect(url_for('index'))
 
 @app.route('/remove_url/<page_id>', methods=['POST'])
+@requires_auth
 def remove_url(page_id):
     config = load_config()
     url_to_remove = request.form.get('url_to_remove')
@@ -400,326 +388,78 @@ def remove_url(page_id):
     return redirect(url_for('index'))
 
 @app.route('/delete_page/<page_id>', methods=['POST'])
+@requires_auth
 def delete_page(page_id):
     config = load_config()
     config['pages'] = [p for p in config['pages'] if p['id'] != page_id]
     save_config(config)
     return redirect(url_for('index'))
 
-# --- Engines ---
-def scrape_url(url):
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        resp = requests.get(url, timeout=15, headers=headers)
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        text = ' '.join([p.get_text() for p in soup.find_all('p')])[:4000]
-        return text.strip() or "No content."
-    except Exception as e:
-        return f"Error: {e}"
-
-def generate_image(image_prompt, gemini_key):
-    today = time.strftime("%Y-%m-%d")
-    config = load_config()
-    daily_imagen = config.get('daily_imagen_requests', {})
-    count_today = daily_imagen.get(today, 0)
-    
-    if count_today >= 500:
-        print(f"⛔ Daily Imagen limit reached (500). Skipping Imagen.")
-        return None
-
-    if not genai or not types or not gemini_key:
-        print("❌ Gemini SDK/types or key not available for Imagen.")
-        return None
-
-    IMAGEN_MODEL_FALLBACKS = [
-        'models/gemini-3.1-flash-image',
-        'models/gemini-3.1-flash-lite-image',
-        'models/gemini-3-pro-image'
-    ]
-
-    client = genai.Client(api_key=gemini_key)
-    for model_name in IMAGEN_MODEL_FALLBACKS:
-        try:
-            print(f"🎨 Trying Nano Banana model: {model_name}...")
-            response = client.models.generate_content(
-                model=model_name,
-                contents=image_prompt,
-                config=types.GenerateContentConfig(
-                    response_modalities=['image'],
-                )
-            )
-            if response.candidates and response.candidates[0].content.parts:
-                for part in response.candidates[0].content.parts:
-                    if part.inline_data and part.inline_data.mime_type.startswith('image/'):
-                        image_bytes = part.inline_data.data
-                        daily_imagen[today] = count_today + 1
-                        config['daily_imagen_requests'] = daily_imagen
-                        save_config(config)
-                        print(f"✅ Image generated successfully with {model_name}.")
-                        return image_bytes
-            print(f"❌ {model_name} returned no image data. Trying next...")
-        except Exception as e:
-            print(f"❌ {model_name} failed: {e}. Trying next...")
-    
-    print("❌ All Nano Banana fallback models failed.")
-    return None
-
-def generate_pollinations_image(prompt):
-    try:
-        print("🎨 Falling back to Pollinations.ai...")
-        url = f"https://image.pollinations.ai/prompt/{prompt}"
-        response = requests.get(url, timeout=45)
-        if response.status_code == 200:
-            return response.content
-        else:
-            print(f"❌ Pollinations request failed: {response.status_code}")
-            return None
-    except Exception as e:
-        print(f"❌ Pollinations error: {e}")
-        return None
-
-def post_to_facebook_with_image(page, caption, image_bytes):
-    fb_url = f"https://graph.facebook.com/v26.0/{page['id']}/photos"
-    files = {'source': ('image.jpg', io.BytesIO(image_bytes), 'image/jpeg')}
-    data = {'message': caption, 'access_token': page['token']}
-    if page['urls']:
-        data['link'] = page['urls'][0]
-    try:
-        result = requests.post(fb_url, files=files, data=data).json()
-        if 'id' in result:
-            print(f"✅ Post with image successful! ID: {result['id']}")
-            return True
-        else:
-            print(f"❌ FB Error (image): {result}")
-            return False
-    except Exception as e:
-        print(f"❌ Connection Error (image): {e}")
-        return False
-
-def execute_engine(page):
-    # Engine 1 (Poetry) – with dynamic provider priority and model names
-    config = load_config()
-    print(f"🤖 Running Engine for Page: {page['id']}")
-    
-    scraped = ""
-    if page['urls']:
-        scraped = scrape_url(page['urls'][0])
-    
-    language = page.get('language', 'Urdu')
-    brief = page['brief']
-    
-    lang_instruction = ""
-    if language == "Urdu":
-        lang_instruction = "Write the post exclusively in Urdu (Nastaleeq style). Use emojis."
-    elif language == "English":
-        lang_instruction = "Write the post exclusively in English. Use emojis."
-    elif language == "Both":
-        lang_instruction = "Write the post in both Urdu and English (side by side). Use emojis."
-    else:
-        lang_instruction = "Write the post in the language that best fits the topic. Use emojis."
-    
-    if scraped:
-        prompt = f"{lang_instruction}\n\nContext/Brief: {page['brief']}\n\nScraped Data: {scraped}\n\nAlso, return a separate, single sentence in ENGLISH describing an image that represents this text, starting with 'IMAGE_PROMPT:'"
-    else:
-        prompt = f"{lang_instruction}\n\nContext/Brief: {page['brief']}\n\nAlso, return a separate, single sentence in ENGLISH describing an image that represents this text, starting with 'IMAGE_PROMPT:'"
-
-    post_text = None
-    image_prompt = None
-
-    # --- Provider Priority Loop (Dynamic models) ---
-    priority_list = page.get('provider_priority', 'gemini').split(',')
-    priority_list = [p.strip() for p in priority_list if p.strip()]
-
-    for provider in priority_list:
-        api_key = get_api_key(provider)
-        if not api_key:
-            print(f"⏭️ No key for {provider}, skipping...")
-            continue
-        try:
-            if provider == 'groq':
-                if not Groq: raise Exception("Groq library missing.")
-                model = get_model_name('groq') or 'openai/gpt-oss-120b'  # Dynamic model
-                client = Groq(api_key=api_key)
-                print(f"🧠 Trying Groq ({model})...")
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                post_text = response.choices[0].message.content
-                print(f"✅ Successfully used {provider}")
-                break
-
-            elif provider == 'openai':
-                if not OpenAI: raise Exception("OpenAI library missing.")
-                model = get_model_name('openai') or 'gpt-4o'  # Dynamic model
-                client = OpenAI(api_key=api_key)
-                print(f"🧠 Trying OpenAI ({model})...")
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                post_text = response.choices[0].message.content
-                print(f"✅ Successfully used {provider}")
-                break
-
-            elif provider == 'deepseek':
-                if not OpenAI: raise Exception("OpenAI library missing.")
-                model = get_model_name('deepseek') or 'deepseek-chat'  # Dynamic model
-                client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-                print(f"🧠 Trying DeepSeek ({model})...")
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                post_text = response.choices[0].message.content
-                print(f"✅ Successfully used {provider}")
-                break
-
-            elif provider == 'anthropic':
-                if not Anthropic: raise Exception("Anthropic library missing.")
-                model = get_model_name('anthropic') or 'claude-sonnet-5'  # Dynamic model
-                client = Anthropic(api_key=api_key)
-                print(f"🧠 Trying Anthropic ({model})...")
-                response = client.messages.create(
-                    model=model,
-                    max_tokens=1024,
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                post_text = response.content[0].text
-                print(f"✅ Successfully used {provider}")
-                break
-
-            elif provider == 'mistral':
-                if not Mistral: raise Exception("Mistral library missing.")
-                model = get_model_name('mistral') or 'mistral-medium-2508'  # Dynamic model
-                client = Mistral(api_key=api_key)
-                print(f"🧠 Trying Mistral ({model})...")
-                response = client.chat.complete(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                post_text = response.choices[0].message.content
-                print(f"✅ Successfully used {provider}")
-                break
-
-            else:  # Gemini
-                if not genai: raise Exception("Genai library missing.")
-                model = get_model_name('gemini') or 'models/gemini-3.5-flash'  # Dynamic model
-                client = genai.Client(api_key=api_key)
-                print(f"🧠 Trying Gemini ({model})...")
-                response = client.models.generate_content(
-                    model=model,
-                    contents=prompt
-                )
-                post_text = response.text.strip()
-                print(f"✅ Successfully used {provider}")
-                break
-
-        except Exception as e:
-            print(f"❌ {provider} failed: {e}, trying next...")
-            continue
-
-    if not post_text:
-        print("❌ All providers in priority list failed.")
-        post_text = "🚀 Bot encountered AI generation issues. Please check your API keys."
-
-    if post_text and "IMAGE_PROMPT:" in post_text:
-        parts = post_text.split("IMAGE_PROMPT:")
-        post_text = parts[0].strip()
-        image_prompt = parts[1].strip()
-    else:
-        image_prompt = page['brief'] or "A beautiful stock photo"
-        if scraped:
-            image_prompt = scraped[:200]
-
-    if not post_text:
-        post_text = "🚀 Hello! This is Vigil AI Bot."
-
-    image_bytes = None
-    gemini_key = get_api_key('gemini')
-    if gemini_key:
-        image_bytes = generate_image(image_prompt, gemini_key)
-    if not image_bytes:
-        image_bytes = generate_pollinations_image(image_prompt)
-
-    if image_bytes:
-        return post_to_facebook_with_image(page, post_text, image_bytes)
-    else:
-        return post_to_facebook_text(post_text, page)
-
-def post_to_facebook_text(post_text, page):
-    fb_url = f"https://graph.facebook.com/v26.0/{page['id']}/feed"
-    data = {'message': post_text, 'access_token': page['token']}
-    if page['urls']:
-        data['link'] = page['urls'][0]
-    try:
-        result = requests.post(fb_url, data=data).json()
-        if 'id' in result:
-            print(f"✅ Text-only post successful! ID: {result['id']}")
-            return True
-        else:
-            print(f"❌ FB Error (text): {result}")
-            return False
-    except Exception as e:
-        print(f"❌ Connection Error (text): {e}")
-        return False
+# ===================== TEST & SCHEDULER (ROUND-ROBIN) =====================
 
 @app.route('/test_post/<page_id>', methods=['POST'])
+@requires_auth
 def test_post(page_id):
     config = load_config()
-    for p in config['pages']:
+    pages = config.get('pages', [])
+    for idx, p in enumerate(pages):
         if p['id'] == page_id:
             print(f"🧪 Test Post for {page_id}...")
-            if is_poetry_page(p.get('brief', '')):
-                execute_engine(p)   # Engine 1 (Poetry)
+            if idx % 2 == 0:
+                print("🔄 Using Engine 1")
+                run_engine_1(p)
             else:
-                if run_engine_2:
-                    run_engine_2()  # Engine 2 (Text-only)
-                else:
-                    print("❌ Deals Engine not available.")
+                print("🔄 Using Engine 2")
+                run_engine_2(p)
             break
     return redirect(url_for('index'))
 
 @app.route('/run_scheduler')
 def run_scheduler():
-    """UptimeRobot hits this every 5 minutes. It checks if it's time to post."""
+    """UptimeRobot hits this every 5 minutes."""
     config = load_config()
     now = time.time()
+    pages = config.get('pages', [])
     
-    for p in config['pages']:
-        # If enough time has passed (e.g., 2 hours), post!
+    for idx, p in enumerate(pages):
         if (now - p.get('last_posted', 0)) > (p['interval'] * 3600):
-            print(f"⏰ Posting for {p['id']}")
-            if is_poetry_page(p.get('brief', '')):
-                execute_engine(p)   # Engine 1
+            print(f"⏰ Posting for {p['id']} (Index: {idx})")
+            
+            if idx % 2 == 0:
+                print("🔄 Using Engine 1")
+                run_engine_1(p)
             else:
-                if run_engine_2:
-                    run_engine_2()  # Engine 2
-                else:
-                    print("❌ Deals Engine not available.")
+                print("🔄 Using Engine 2")
+                run_engine_2(p)
+            
             p['last_posted'] = now
             save_config(config)
-        
+            time.sleep(10)
+    
     return "Scheduler checked.", 200
 
-# --- Scheduler ---
+# --- Background Scheduler (Round-Robin) ---
 def bot_scheduler():
     while True:
         config = load_config()
         now = time.time()
-        for p in config['pages']:
+        pages = config.get('pages', [])
+        
+        for idx, p in enumerate(pages):
             if (now - p.get('last_posted', 0)) > (p['interval'] * 3600):
-                print(f"⏰ Posting for {p['id']}")
-                if is_poetry_page(p.get('brief', '')):
-                    execute_engine(p)
+                print(f"⏰ Posting for {p['id']} (Index: {idx})")
+                
+                if idx % 2 == 0:
+                    print("🔄 Using Engine 1")
+                    run_engine_1(p)
                 else:
-                    if run_engine_2:
-                        run_engine_2()
-                    else:
-                        print("❌ Deals Engine not available.")
+                    print("🔄 Using Engine 2")
+                    run_engine_2(p)
+                
                 p['last_posted'] = now
                 save_config(config)
-                time.sleep(10)  # 10 seconds gap between pages
+                time.sleep(10)
+        
         time.sleep(60)
 
 # --- Launcher ---
