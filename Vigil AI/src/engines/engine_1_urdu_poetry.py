@@ -116,7 +116,13 @@ def generate_pollinations_image(prompt):
         url = f"https://image.pollinations.ai/prompt/{prompt}"
         response = requests.get(url, timeout=45)
         if response.status_code == 200:
-            return response.content
+            # Check that the response is actually an image
+            content_type = response.headers.get('content-type', '')
+            if 'image' in content_type:
+                return response.content
+            else:
+                print(f"❌ Pollinations returned {content_type}, not an image. Skipping.")
+                return None
         else:
             print(f"❌ Pollinations request failed: {response.status_code}")
             return None
@@ -678,18 +684,27 @@ def run_engine_1(page):
 
         # ---- Cross-Posting to Instagram ----
         instagram_id = page.get("instagram_account_id")
-        if instagram_id and image_bytes:
+        if instagram_id:
             try:
                 from src.core.facebook_client import post_to_instagram
-                ig_post_id = post_to_instagram(
-                    ig_user_id=instagram_id,
-                    access_token=page["token"],
-                    caption=formatted_post,
-                    image_bytes=image_bytes,
-                )
-                if ig_post_id:
-                    print(f"📸 Cross-posted to Instagram: {ig_post_id}")
+                
+                # Use the Pollinations URL if we have an image prompt
+                # The image_prompt variable is already generated in your engine
+                if image_prompt:
+                    pollinations_url = f"https://image.pollinations.ai/prompt/{image_prompt}"
+                    print(f"📸 Instagram: Using Pollinations public URL...")
+                    ig_post_id = post_to_instagram(
+                        ig_user_id=instagram_id,
+                        access_token=page["token"],
+                        caption=formatted_post,
+                        image_url=pollinations_url,  # PUBLIC URL
+                    )
+                    if ig_post_id:
+                        print(f"📸 Instagram posted successfully! ID: {ig_post_id}")
+                    else:
+                        print("❌ Instagram returned no ID.")
+                else:
+                    print("⚠️ Instagram SKIPPED: No image prompt available.")
+                    
             except Exception as e:
-                print(f"⚠️ Instagram cross-post failed: {e}")
-
-    print(f"🔄 [Engine 1] Finished. Posted {posts_made} posts.")
+                print(f"⚠️ Instagram error: {e}")
