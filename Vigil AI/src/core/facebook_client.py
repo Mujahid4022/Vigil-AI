@@ -290,35 +290,40 @@ def post_to_instagram(
     caption: str,
     image_bytes: bytes = None,
     image_path: str = None,
+    image_url: str = None,
 ) -> str:
     """
     Posts an image to Instagram Feed.
-    Requires an Instagram Business account linked to your Facebook Page.
+    Supports image_url (public URL), image_bytes, or image_path.
     """
-    if not image_bytes and not image_path:
+    if not image_url and not image_bytes and not image_path:
         print("❌ No image provided for Instagram.")
         return None
 
     try:
         # Step 1: Create media container
         container_url = f"https://graph.facebook.com/v26.0/{ig_user_id}/media"
-        if image_bytes:
-            # Upload as bytes (we need to save to a temp file or use a URL)
+        data = {"caption": caption[:2200], "access_token": access_token}
+        files = None
+
+        if image_url:
+            # RECOMMENDED: Use a public URL
+            data["image_url"] = image_url
+        elif image_path and os.path.exists(image_path):
+            files = {"image": open(image_path, "rb")}
+        elif image_bytes:
             import tempfile
             with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
                 tmp.write(image_bytes)
                 temp_path = tmp.name
             files = {"image": open(temp_path, "rb")}
-        elif image_path:
-            files = {"image": open(image_path, "rb")}
-        else:
-            return None
 
-        data = {
-            "caption": caption[:2200],  # Instagram limit
-            "access_token": access_token,
-        }
-        response = requests.post(container_url, files=files, data=data)
+        # Send the request
+        if files:
+            response = requests.post(container_url, files=files, data=data)
+        else:
+            response = requests.post(container_url, data=data)
+
         result = response.json()
         if "id" not in result:
             print(f"❌ Instagram container error: {result}")
@@ -326,7 +331,7 @@ def post_to_instagram(
         container_id = result["id"]
 
         # Clean up temp file if created
-        if image_bytes and "temp_path" in locals():
+        if files and 'temp_path' in locals():
             os.remove(temp_path)
 
         # Step 2: Publish the container
@@ -337,6 +342,7 @@ def post_to_instagram(
         }
         publish_response = requests.post(publish_url, data=publish_data)
         publish_result = publish_response.json()
+
         if "id" in publish_result:
             print(f"✅ Instagram post successful! ID: {publish_result['id']}")
             return publish_result["id"]
