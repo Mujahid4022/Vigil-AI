@@ -18,5 +18,8 @@ We recognize and support data ownership rights. If AliExpress, Pinterest, or any
 ## 4. Third-Party Links
 Our posts contain outbound affiliate links pointing to external e-commerce sites (such as AliExpress). We have no control over, and assume no responsibility for, the privacy policies, terms, or data practices of any third-party websites.
 
-## 5. Contact Us
+## 7.An automated marketing bot that pulls lifestyle products and kitchen tool information via API to curate high-quality images directly onto our niche public boards.
+
+
+## 6. Contact Us
 If you have any questions or require more information about our privacy protocols, please contact us via our official repository channel.
