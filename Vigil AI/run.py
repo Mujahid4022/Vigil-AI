@@ -3,6 +3,7 @@ import json
 import time
 import threading
 import requests
+import uuid
 from flask import Flask, request, render_template_string, redirect, url_for
 from functools import wraps
 from flask import Response
@@ -17,6 +18,15 @@ from src.engines.engine_2_deals import run_engine_2  # Engine 2
 
 # --- Configuration ---
 CONFIG_FILE = "config.json"
+
+DRIVER_FILE = "src/utils/provider_drivers.json"
+
+def load_drivers():
+    """Load the provider driver templates from JSON file."""
+    if os.path.exists(DRIVER_FILE):
+        with open(DRIVER_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
 
 def get_facebook_page_name(page_id, access_token):
     """Fetches the actual Facebook Page name using the Graph API."""
@@ -134,8 +144,184 @@ HTML_TEMPLATE = """
         .provider-list { margin-top: 10px; }
         .provider-item { background: #e9ecef; padding: 8px 12px; margin: 5px 0; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
         .provider-item span { font-weight: bold; }
+                /* ===== COLLAPSIBLE ACCORDION ===== */
+        .collapsible-header {
+            background: #007bff;
+            color: white;
+            cursor: pointer;
+            padding: 12px 18px;
+            border-radius: 8px;
+            margin-top: 15px;
+            margin-bottom: 0px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            user-select: none;
+            transition: background 0.2s;
+        }
+        .collapsible-header:hover {
+            background: #0056b3;
+        }
+        .collapsible-header .arrow {
+            transition: transform 0.3s;
+            font-size: 18px;
+        }
+        .collapsible-header.active .arrow {
+            transform: rotate(180deg);
+        }
+        .collapsible-content {
+            background: white;
+            padding: 20px;
+            border-radius: 0 0 10px 10px;
+            margin-bottom: 15px;
+            display: none;
+            border-left: 3px solid #007bff;
+            border-right: 1px solid #ddd;
+            border-bottom: 1px solid #ddd;
+        }
+        .collapsible-content.active {
+            display: block;
+        }
+        
+        /* ===== SUB-TABS ===== */
+        .sub-tab-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+            flex-wrap: wrap;
+        }
+        .sub-tab-btn {
+            padding: 8px 18px;
+            background: #f4f7f6;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+            color: #000000;
+            transition: all 0.2s;
+        }
+        .sub-tab-btn:hover {
+            background: #e9ecef;
+        }
+        .sub-tab-btn.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+        .sub-tab-content {
+            display: none;
+        }
+        .sub-tab-content.active {
+            display: block;
+        }
+                /* ===== LOCKED TOGGLE ===== */
+        .toggle-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin: 10px 0 15px 0;
+            padding: 10px 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+        .toggle-wrapper label {
+            margin: 0;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 26px;
+            flex-shrink: 0;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #ccc;
+            transition: 0.3s;
+            border-radius: 34px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 4px;
+            bottom: 4px;
+            background: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+        .toggle-switch input:checked + .toggle-slider {
+            background: #28a745;
+        }
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(24px);
+        }
+        .toggle-switch input:disabled + .toggle-slider {
+            background: #e9ecef;
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .toggle-switch input:disabled + .toggle-slider:before {
+            background: #adb5bd;
+        }
+        .toggle-status {
+            font-size: 14px;
+            color: #6c757d;
+        }
+        .toggle-status.active {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .toggle-status.inactive {
+            color: #dc3545;
+        }
+        .toggle-warning {
+            font-size: 13px;
+            color: #dc3545;
+            background: #f8d7da;
+            padding: 4px 10px;
+            border-radius: 4px;
+            border: 1px solid #f5c6cb;
+            display: none;
+        }
+        .toggle-warning.show {
+            display: inline-block;
+        }
+         .btn-remove {
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 4px 10px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .btn-remove:hover {
+            background: #c82333;
+        }
+        .hidden-product {
+            display: none !important;
+        }        
     </style>
-    <script>
+<script>
+// ===== Toggle URLs (Existing) =====
 function toggleUrls(pageId) {
     var list = document.getElementById('urlList-' + pageId);
     var btn = document.getElementById('urlToggleBtn-' + pageId);
@@ -147,6 +333,79 @@ function toggleUrls(pageId) {
         btn.textContent = 'Show';
     }
 }
+
+// ===== ACCORDION: Click header to expand/collapse =====
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.collapsible-header').forEach(header => {
+        header.addEventListener('click', function() {
+            this.classList.toggle('active');
+            const content = this.nextElementSibling;
+            if (content.style.display === 'block') {
+                content.style.display = 'none';
+            } else {
+                content.style.display = 'block';
+            }
+        });
+    });
+
+    // ===== SUB-TABS: Switch between Twitter, Telegram, Pinterest, Webhooks =====
+    document.querySelectorAll('.sub-tab-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const parentContainer = this.closest('.collapsible-content');
+            parentContainer.querySelectorAll('.sub-tab-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            
+            parentContainer.querySelectorAll('.sub-tab-content').forEach(div => div.classList.remove('active'));
+            const targetId = this.getAttribute('data-target');
+            document.getElementById(targetId).classList.add('active');
+        });
+    });
+
+    // ===== AUTO-CLICK first sub-tab to show default view =====
+    document.querySelectorAll('.sub-tab-bar').forEach(bar => {
+        const firstBtn = bar.querySelector('.sub-tab-btn');
+        if (firstBtn) firstBtn.click();
+    });
+});
+
+    // ===== TWITTER TOGGLE: Lock if global keys missing =====
+    function setupTwitterToggle(toggleId, warningId, statusId) {
+        const toggle = document.getElementById(toggleId);
+        const warning = document.getElementById(warningId);
+        const status = document.getElementById(statusId);
+        
+        if (!toggle) return;
+        
+        toggle.addEventListener('change', function() {
+            if (this.checked && this.disabled) {
+                // This should never happen, but just in case
+                this.checked = false;
+                if (warning) warning.classList.add('show');
+                return;
+            }
+            if (this.checked) {
+                if (warning) warning.classList.remove('show');
+                if (status) {
+                    status.textContent = '✅ Enabled for this page';
+                    status.className = 'toggle-status active';
+                }
+            } else {
+                if (status) {
+                    status.textContent = '❌ Disabled for this page';
+                    status.className = 'toggle-status inactive';
+                }
+            }
+        });
+    }
+
+    // Wait for DOM to load
+    document.addEventListener('DOMContentLoaded', function() {
+        // Setup Add Page toggle
+        setupTwitterToggle('twitter_enabled', 'twitter_warning', 'twitter_status');
+        // Setup Edit Page toggle
+        setupTwitterToggle('edit_twitter_enabled', 'edit_twitter_warning', 'edit_twitter_status');
+    });
+
 </script>
 </head>
 <body>
@@ -179,124 +438,172 @@ function toggleUrls(pageId) {
         </div>
     </div>
 
-    <!-- 1. API Key Management -->
-    <div class="card" style="background: #fff3cd;">
-        <h3>🔑 Manage Your AI API Keys</h3>
-        <p>Save a key for a provider. Once saved, it will appear in the "Add Page" dropdown below.</p>
-        <form method="POST" action="/add_api_key">
-            <label>AI Provider</label>
-            <select name="ai_provider" required>
-                <option value="gemini">Google Gemini</option>
-                <option value="groq">Groq Cloud</option>
-                <option value="openai">OpenAI (ChatGPT)</option>
-                <option value="anthropic">Anthropic (Claude)</option>
-                <option value="mistral">Mistral AI</option>
-                <option value="deepseek">DeepSeek</option>
-            </select>
-            <label>API Key</label>
-            <input type="text" name="api_key" required placeholder="Enter your API key for the selected provider...">
-            <label>Model Name (Optional - leave blank for default)</label>
-            <input type="text" name="model_name" placeholder="e.g. openai/gpt-oss-120b or claude-sonnet-5">
-            <button type="submit" class="btn-success" style="width:100%;">💾 Save API Key</button>
-        </form>
-        <div class="provider-list">
-            <strong>Saved API Keys:</strong>
-            {% for provider, data in api_keys.items() %}
-            <div class="provider-item">
-                <span>{{ provider.capitalize() }} (Model: {{ data.model or 'default' }})</span>
-                <div>
-                    <form method="POST" action="/delete_api_key/{{ provider }}" style="display:inline;">
-                        <button type="submit" class="btn-danger" style="padding: 2px 8px; font-size: 12px;">Remove</button>
-                    </form>
-                </div>
+<!-- 1. API Key Management (Collapsible) -->
+<div class="collapsible-header">
+    🔑 Manage Your AI API Keys <span class="arrow">▼</span>
+</div>
+<div class="collapsible-content">
+    <p>Save a key for a provider. Once saved, it will appear in the "Add Page" dropdown below.</p>
+    <form method="POST" action="/add_api_key">
+        <label>AI Provider</label>
+        <select name="ai_provider" required>
+            <option value="gemini">Google Gemini</option>
+            <option value="groq">Groq Cloud</option>
+            <option value="openai">OpenAI (ChatGPT)</option>
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="mistral">Mistral AI</option>
+            <option value="deepseek">DeepSeek</option>
+        </select>
+        <label>API Key</label>
+        <input type="text" name="api_key" required placeholder="Enter your API key for the selected provider...">
+        <label>Model Name (Optional - leave blank for default)</label>
+        <input type="text" name="model_name" placeholder="e.g. openai/gpt-oss-120b or claude-sonnet-5">
+        <button type="submit" class="btn-success" style="width:100%;">💾 Save API Key</button>
+    </form>
+    <div class="provider-list">
+        <strong>Saved API Keys:</strong>
+        {% for provider, data in api_keys.items() %}
+        <div class="provider-item">
+            <span>{{ provider.capitalize() }} (Model: {{ data.model or 'default' }})</span>
+            <div>
+                <form method="POST" action="/delete_api_key/{{ provider }}" style="display:inline;">
+                    <button type="submit" class="btn-danger" style="padding: 2px 8px; font-size: 12px;">Remove</button>
+                </form>
             </div>
-            {% endfor %}
         </div>
+        {% endfor %}
     </div>
+</div>
 
-    <!-- 2. Add New Page -->
-    <div class="card" style="background: #e3f2fd;">
-        <h3>➕ Add New Facebook Page</h3>
-        <form method="POST" action="/add_page">
-            <label>Facebook Page ID</label>
-            <input type="text" name="page_id" required placeholder="e.g. 123456789">
-            <label>Facebook Page Name (Optional - for easy identification)</label>
-            <input type="text" name="page_name" placeholder="e.g., My Deals Page">
-            <label>Facebook Access Token</label>
-            <input type="text" name="page_token" required placeholder="EAAaF...">
-            <label>AI Provider (Must have key saved above)</label>
-            <select name="ai_provider" required>
-                {% if not api_keys %}
-                    <option disabled>⚠️ Please save an API key first</option>
-                {% else %}
-                    {% for provider in api_keys.keys() %}
-                        <option value="{{ provider }}">{{ provider.capitalize() }}</option>
-                    {% endfor %}
-                {% endif %}
-            </select>
-            <label>Post Language</label>
-            <select name="post_language" required>
-                <option value="Urdu">Urdu</option>
-                <option value="English">English</option>
-                <option value="Both">Both (Urdu & English)</option>
-                <option value="Auto">Auto-Detect (Based on Brief)</option>
-            </select>
-            <label>Page Brief / Topic</label>
-            <textarea name="brief" required placeholder="e.g. 'I run a small bookstore in Lahore. I want to post daily book recommendations.'"></textarea>
-            <label>Provider Priority (comma‑separated, e.g. gemini,groq,openai)</label>
-            <input type="text" name="provider_priority" value="gemini" placeholder="gemini,groq,openai">
-            <label>Posts per run ...</label>
-            <input type="number" name="posts_per_run" value="2" min="1" max="10">
-            <label>Post interval ...</label>
-            <input type="number" name="post_interval" value="30" min="5" max="300">
-            <label>Instagram Account ID (Optional)</label>
-            <input type="text" name="instagram_id" placeholder="e.g. 17841412345678901" value="">
-            
-            <!-- ===== NEW: Per‑Page Twitter & Webhook Fields ===== -->
-            <label>Twitter Consumer Key (Optional - for this page)</label>
-            <input type="text" name="twitter_consumer_key" placeholder="Your Twitter Consumer Key">
-            
-            <label>Twitter Consumer Secret</label>
-            <input type="text" name="twitter_consumer_secret" placeholder="Your Twitter Consumer Secret">
-            
-            <label>Twitter Access Token</label>
-            <input type="text" name="twitter_access_token" placeholder="Your Twitter Access Token">
-            
-            <label>Twitter Access Token Secret</label>
-            <input type="text" name="twitter_access_token_secret" placeholder="Your Twitter Access Token Secret">
-            
-            <label>Lead Webhook URL (Optional - for this page)</label>
-            <input type="text" name="lead_webhook" placeholder="https://your-zapier-webhook.com">
-            <!-- ================================================= -->
-            
-            <label>Schedule (Post every X hours)</label>
-            <input type="number" name="interval_hours" value="2" min="1" max="24" required>
-            <button type="submit" class="btn-success" style="width:100%; margin-top:15px;">💾 Save Page & Start Bot</button>
-        </form>
+<!-- 2. Add New Page (Collapsible) -->
+<div class="collapsible-header">
+    ➕ Add New Facebook Page <span class="arrow">▼</span>
+</div>
+<div class="collapsible-content">
+    <form method="POST" action="/add_page">
+        <label>Facebook Page ID</label>
+        <input type="text" name="page_id" required placeholder="e.g. 123456789">
+        <label>Facebook Page Name (Optional - for easy identification)</label>
+        <input type="text" name="page_name" placeholder="e.g., My Deals Page">
+        <label>Facebook Access Token</label>
+        <input type="text" name="page_token" required placeholder="EAAaF...">
+        <label>AI Provider (Must have key saved above)</label>
+        <select name="ai_provider" required>
+            {% if not api_keys %}
+                <option disabled>⚠️ Please save an API key first</option>
+            {% else %}
+                {% for provider in api_keys.keys() %}
+                    <option value="{{ provider }}">{{ provider.capitalize() }}</option>
+                {% endfor %}
+            {% endif %}
+        </select>
+        <label>Post Language</label>
+        <select name="post_language" required>
+            <option value="Urdu">Urdu</option>
+            <option value="English">English</option>
+            <option value="Both">Both (Urdu & English)</option>
+            <option value="Auto">Auto-Detect (Based on Brief)</option>
+        </select>
+        <label>Page Brief / Topic</label>
+        <textarea name="brief" required placeholder="e.g. 'I run a small bookstore in Lahore. I want to post daily book recommendations.'"></textarea>
+        <label>Provider Priority (comma‑separated, e.g. gemini,groq,openai)</label>
+        <input type="text" name="provider_priority" value="gemini" placeholder="gemini,groq,openai">
+        <label>Posts per run ...</label>
+        <input type="number" name="posts_per_run" value="2" min="1" max="10">
+        <label>Post interval ...</label>
+        <input type="number" name="post_interval" value="30" min="5" max="300">
+        <label>Instagram Account ID (Optional)</label>
+        <input type="text" name="instagram_id" placeholder="e.g. 17841412345678901" value="">
+        
+            <!-- ===== Twitter Toggle ===== -->
+            <div class="toggle-wrapper">
+                <div class="toggle-switch">
+                    <input type="checkbox" id="twitter_enabled" name="twitter_enabled" value="true" 
+                           {% if not twitter_configured %}disabled{% endif %}>
+                    <span class="toggle-slider"></span>
+                </div>
+                <label for="twitter_enabled">🐦 Enable Twitter Cross-Posting</label>
+                <span id="twitter_status" class="toggle-status {% if twitter_configured %}active{% else %}inactive{% endif %}">
+                    {% if twitter_configured %}✅ Global keys configured{% else %}❌ No global keys found{% endif %}
+                </span>
+                <span id="twitter_warning" class="toggle-warning {% if not twitter_configured %}show{% endif %}">
+                    ⚠️ Please add Twitter API keys in the Integrations card first.
+                </span>
+            </div>        
+        <label>Lead Webhook URL (Optional - for this page)</label>
+        <input type="text" name="lead_webhook" placeholder="https://your-zapier-webhook.com">
+        
+        <label>Schedule (Post every X hours)</label>
+        <input type="number" name="interval_hours" value="2" min="1" max="24" required>
+        <button type="submit" class="btn-success" style="width:100%; margin-top:15px;">💾 Save Page & Start Bot</button>
+    </form>
+</div>
+
+<!-- 2.5. Integrations (Collapsible + Sub-Tabs) -->
+<div class="collapsible-header">
+    🔗 Integrations (Twitter, Telegram, Pinterest, Webhooks) <span class="arrow">▼</span>
+</div>
+<div class="collapsible-content">
+    <p>Paste your API keys for cross-posting, alerts, and tracking.</p>
+    
+    <!-- Sub-Tab Navigation -->
+    <div class="sub-tab-bar">
+        <button class="sub-tab-btn active" data-target="tab-twitter">🐦 Twitter</button>
+        <button class="sub-tab-btn" data-target="tab-telegram">📱 Telegram</button>
+        <button class="sub-tab-btn" data-target="tab-pinterest">📌 Pinterest</button>
+        <button class="sub-tab-btn" data-target="tab-webhooks">🌐 Webhooks</button>
     </div>
-
-    <!-- 2.5. Integrations (Twitter, Telegram, Webhooks, Google Search) -->
-    <div class="card" style="background: #e8f5e9;">
-        <h3>🔗 Integrations (Twitter, Telegram, Webhooks, Google)</h3>
-        <p>Paste your API keys for cross-posting, alerts, and Google Search.</p>
-        <form method="POST" action="/update_integrations">
+    
+    <form method="POST" action="/update_integrations">
+        
+        <!-- TAB 1: Twitter -->
+        <div id="tab-twitter" class="sub-tab-content active">
             <h4>🐦 Twitter</h4>
-            <label>Consumer Key</label><input type="text" name="twitter_consumer_key" value="{{ twitter.consumer_key or '' }}">
-            <label>Consumer Secret</label><input type="text" name="twitter_consumer_secret" value="{{ twitter.consumer_secret or '' }}">
-            <label>Access Token</label><input type="text" name="twitter_access_token" value="{{ twitter.access_token or '' }}">
-            <label>Access Token Secret</label><input type="text" name="twitter_access_token_secret" value="{{ twitter.access_token_secret or '' }}">
-            
+            <label>Consumer Key</label>
+            <input type="text" name="twitter_consumer_key" value="{{ twitter.consumer_key or '' }}">
+            <label>Consumer Secret</label>
+            <input type="text" name="twitter_consumer_secret" value="{{ twitter.consumer_secret or '' }}">
+            <label>Access Token</label>
+            <input type="text" name="twitter_access_token" value="{{ twitter.access_token or '' }}">
+            <label>Access Token Secret</label>
+            <input type="text" name="twitter_access_token_secret" value="{{ twitter.access_token_secret or '' }}">
+        </div>
+        
+        <!-- TAB 2: Telegram -->
+        <div id="tab-telegram" class="sub-tab-content">
             <h4>📱 Telegram</h4>
-            <label>Bot Token (from @BotFather)</label><input type="text" name="telegram_token" value="{{ telegram_token or '' }}">
+            <label>Bot Token (from @BotFather)</label>
+            <input type="text" name="telegram_token" value="{{ telegram_token or '' }}">
             <label>Authorized Telegram User IDs (comma separated)</label>
             <input type="text" name="authorized_users" value="{{ authorized_users or '' }}" placeholder="e.g. 123456789, 987654321">
-            
+        </div>
+        
+        <!-- TAB 3: Pinterest (NEW) -->
+        <div id="tab-pinterest" class="sub-tab-content">
+            <h4>📌 Pinterest (Business API)</h4>
+            <p style="font-size:14px; color:#555;">Get your credentials from <a href="https://developers.pinterest.com" target="_blank">developers.pinterest.com</a></p>
+            <label>App ID (Client ID)</label>
+            <input type="text" name="pinterest_client_id" value="{{ pinterest.client_id or '' }}" placeholder="e.g. 1234567890">
+            <label>App Secret (Client Secret)</label>
+            <input type="text" name="pinterest_client_secret" value="{{ pinterest.client_secret or '' }}" placeholder="e.g. abcdef123456">
+            <label>Access Token</label>
+            <input type="text" name="pinterest_access_token" value="{{ pinterest.access_token or '' }}" placeholder="pina_...">
+            <label>Default Board ID (Optional)</label>
+            <input type="text" name="pinterest_default_board" value="{{ pinterest.default_board or '' }}" placeholder="e.g. 1234567890">
+            <p style="font-size:12px; color:#888; margin-top:5px;">Leave Board ID blank if you want to set it per-page.</p>
+        </div>
+        
+        <!-- TAB 4: Webhooks -->
+        <div id="tab-webhooks" class="sub-tab-content">
             <h4>🌐 Lead Webhook</h4>
-            <label>Webhook URL (Zapier/Mailchimp)</label><input type="text" name="lead_webhook" value="{{ lead_webhook or '' }}">
-            
-            <button type="submit" class="btn-success" style="width:100%; margin-top:15px;">💾 Save Integrations</button>
-        </form>
-    </div>
+            <label>Webhook URL (Zapier/Mailchimp)</label>
+            <input type="text" name="lead_webhook" value="{{ lead_webhook or '' }}" placeholder="https://your-zapier-webhook.com">
+        </div>
+        
+        <!-- ONE SAVE BUTTON FOR ALL -->
+        <button type="submit" class="btn-success" style="width:100%; margin-top:15px;">💾 Save Integrations</button>
+    </form>
+</div>
 
     <!-- 3. Active Pages List -->
     <div class="card">
@@ -379,18 +686,23 @@ function toggleUrls(pageId) {
                         <input type="text" name="edit_instagram_id" value="{{ page.get('instagram_account_id', '') }}" placeholder="e.g. 17841412345678901">
                         
                         <!-- ===== NEW: Edit Twitter & Webhook Fields ===== -->
-                        <label>Twitter Consumer Key</label>
-                        <input type="text" name="edit_twitter_consumer_key" value="{{ page.get('twitter_consumer_key', '') }}">
-                        
-                        <label>Twitter Consumer Secret</label>
-                        <input type="text" name="edit_twitter_consumer_secret" value="{{ page.get('twitter_consumer_secret', '') }}">
-                        
-                        <label>Twitter Access Token</label>
-                        <input type="text" name="edit_twitter_access_token" value="{{ page.get('twitter_access_token', '') }}">
-                        
-                        <label>Twitter Access Token Secret</label>
-                        <input type="text" name="edit_twitter_access_token_secret" value="{{ page.get('twitter_access_token_secret', '') }}">
-                        
+                        <!-- ===== Twitter Toggle (Edit) ===== -->
+                        <div class="toggle-wrapper">
+                            <div class="toggle-switch">
+                                <input type="checkbox" id="edit_twitter_enabled" name="edit_twitter_enabled" value="true"
+                                       {% if page.get('twitter_enabled', False) %}checked{% endif %}
+                                       {% if not twitter_configured %}disabled{% endif %}>
+                                <span class="toggle-slider"></span>
+                            </div>
+                            <label for="edit_twitter_enabled">🐦 Enable Twitter Cross-Posting</label>
+                            <span id="edit_twitter_status" class="toggle-status {% if twitter_configured %}active{% else %}inactive{% endif %}">
+                                {% if twitter_configured %}✅ Global keys configured{% else %}❌ No global keys found{% endif %}
+                            </span>
+                            <span id="edit_twitter_warning" class="toggle-warning {% if not twitter_configured %}show{% endif %}">
+                                ⚠️ Please add Twitter API keys in the Integrations card first.
+                            </span>
+                        </div>
+
                         <label>Lead Webhook URL (for this page)</label>
                         <input type="text" name="edit_lead_webhook" value="{{ page.get('lead_webhook_url', '') }}" placeholder="https://your-zapier-webhook.com">
                         <!-- ============================================ -->
@@ -420,15 +732,24 @@ function toggleUrls(pageId) {
 @requires_auth
 def index():
     config = load_config()
+    twitter_creds = config.get("twitter_credentials", {})
+    twitter_configured = bool(
+        twitter_creds.get("consumer_key") and
+        twitter_creds.get("consumer_secret") and
+        twitter_creds.get("access_token") and
+        twitter_creds.get("access_token_secret")
+    )
     return render_template_string(
         HTML_TEMPLATE,
         api_keys=config.get("api_keys", {}),
         pages=config.get("pages", []),
         bot_paused=BOT_PAUSED,
-        twitter=config.get("twitter_credentials", {}),
+        twitter=twitter_creds,
+        twitter_configured=twitter_configured,  # <-- NEW
         telegram_token=config.get("telegram_bot_token", ""),
         lead_webhook=config.get("lead_webhook_url", ""),
         authorized_users=",".join([str(uid) for uid in config.get("authorized_telegram_users", [])]),
+        pinterest=config.get("pinterest_credentials", {}),
     )
 
 
@@ -496,10 +817,7 @@ def add_page():
                 "post_interval": int(request.form.get("post_interval", 30)),
                 "instagram_account_id": request.form.get("instagram_id", ""),
                 # ----- NEW PER‑PAGE FIELDS -----
-                "twitter_consumer_key": request.form.get("twitter_consumer_key", ""),
-                "twitter_consumer_secret": request.form.get("twitter_consumer_secret", ""),
-                "twitter_access_token": request.form.get("twitter_access_token", ""),
-                "twitter_access_token_secret": request.form.get("twitter_access_token_secret", ""),
+                "twitter_enabled": request.form.get("twitter_enabled") == "true",
                 "lead_webhook_url": request.form.get("lead_webhook", ""),
             }
         )
@@ -534,10 +852,7 @@ def edit_page(page_id):
             p["post_interval"] = int(request.form.get("edit_post_interval", 30))
             p["instagram_account_id"] = request.form.get("edit_instagram_id", "")
             # ----- NEW PER‑PAGE FIELDS -----
-            p["twitter_consumer_key"] = request.form.get("edit_twitter_consumer_key", "")
-            p["twitter_consumer_secret"] = request.form.get("edit_twitter_consumer_secret", "")
-            p["twitter_access_token"] = request.form.get("edit_twitter_access_token", "")
-            p["twitter_access_token_secret"] = request.form.get("edit_twitter_access_token_secret", "")
+            p["twitter_enabled"] = request.form.get("edit_twitter_enabled") == "true"
             p["lead_webhook_url"] = request.form.get("edit_lead_webhook", "")
             break
     if new_token is not None:
@@ -584,7 +899,7 @@ def delete_page(page_id):
 @app.route("/update_integrations", methods=["POST"])
 @requires_auth
 def update_integrations():
-    """Saves Twitter, Telegram (with authorized users), Webhook, and Google keys."""
+    """Saves Twitter, Telegram, Webhook, and Pinterest keys."""
     config = load_config()
     
     # Twitter
@@ -607,6 +922,14 @@ def update_integrations():
     
     # Lead Webhook
     config["lead_webhook_url"] = request.form.get("lead_webhook", "")
+    
+    # Pinterest (NEW)
+    config["pinterest_credentials"] = {
+        "client_id": request.form.get("pinterest_client_id", ""),
+        "client_secret": request.form.get("pinterest_client_secret", ""),
+        "access_token": request.form.get("pinterest_access_token", ""),
+        "default_board": request.form.get("pinterest_default_board", ""),
+    }
        
     save_config(config)
     print("✅ Integrations updated successfully.")
@@ -712,17 +1035,42 @@ AFFILIATE_HTML = """
     <!-- 1. Add Provider Card -->
     <div class="card" style="background: #e3f2fd;">
         <h3>➕ Add Affiliate Provider</h3>
-        <form method="POST" action="/add_provider">
-            <label>Provider Name (e.g., Amazon, CJ_Affiliate)</label>
-            <input type="text" name="provider_name" required placeholder="Type any name...">
-            <label>API Key / Client ID</label>
-            <input type="text" name="api_key" placeholder="Your API Key">
-            <label>API Secret / Client Secret</label>
-            <input type="text" name="api_secret" placeholder="Your API Secret">
-            <label>Associate Tag / Campaign ID</label>
-            <input type="text" name="associate_tag" placeholder="e.g., yourname-20">
+        <form method="POST" action="/add_provider" id="provider_form">
+            
+            <label>Select Provider</label>
+            <select name="provider_name" id="provider_name" required onchange="updateFields()">
+                <option value="">-- Select a provider --</option>
+                <option value="aliexpress">AliExpress</option>
+                <option value="amazon">Amazon</option>
+                <option value="flipkart">Flipkart</option>
+                <option value="ebay">eBay</option>
+                <option value="alibaba">Alibaba</option>
+                <option value="walmart">Walmart</option>
+                <option value="daraz">Daraz (Pakistan)</option>
+                <option value="admitad">Admitad (166+ Brands)</option>
+            </select>
+
+            <!-- Dynamic Fields Container -->
+            <div id="fields_container">
+                <div id="field_api_key" style="display:none;">
+                    <label id="label_api_key">API Key</label>
+                    <input type="text" name="api_key" id="api_key" placeholder="Enter your API Key">
+                </div>
+
+                <div id="field_api_secret" style="display:none;">
+                    <label id="label_api_secret">API Secret</label>
+                    <input type="text" name="api_secret" id="api_secret" placeholder="Enter your API Secret">
+                </div>
+
+                <div id="field_associate_tag" style="display:none;">
+                    <label id="label_associate_tag">Associate Tag</label>
+                    <input type="text" name="associate_tag" id="associate_tag" placeholder="Enter your Associate Tag">
+                </div>
+            </div>
+
             <button type="submit" class="btn-success" style="width:100%; margin-top:15px;">💾 Save Provider</button>
         </form>
+        
         <h4>Saved Providers:</h4>
         {% for p in providers %}
         <div class="provider-item">
@@ -735,6 +1083,121 @@ AFFILIATE_HTML = """
         <p style="color:#888;">No providers added yet.</p>
         {% endfor %}
     </div>
+
+    <script>
+    // ===== DYNAMIC FIELD MAPPING =====
+    const PROVIDER_FIELDS = {
+        "aliexpress": {
+            "fields": ["api_key", "api_secret", "associate_tag"],
+            "labels": {
+                "api_key": "App Key (Client ID)",
+                "api_secret": "App Secret (Client Secret)",
+                "associate_tag": "Tracking ID"
+            }
+        },
+        "amazon": {
+            "fields": ["api_key", "api_secret", "associate_tag"],
+            "labels": {
+                "api_key": "Access Key",
+                "api_secret": "Secret Key",
+                "associate_tag": "Partner Tag (Associate Tag)"
+            }
+        },
+        "flipkart": {
+            "fields": ["api_key", "api_secret", "associate_tag"],
+            "labels": {
+                "api_key": "Affiliate Tracking ID",
+                "api_secret": "Affiliate API Token",
+                "associate_tag": "Affiliate Tracking ID (same as API Key)"
+            }
+        },
+        "ebay": {
+            "fields": ["api_key", "api_secret", "associate_tag"],
+            "labels": {
+                "api_key": "App ID (Client ID)",
+                "api_secret": "Cert ID (Client Secret)",
+                "associate_tag": "RuName (Redirect URL Name)"
+            }
+        },
+        "alibaba": {
+            "fields": ["api_key", "api_secret"],
+            "labels": {
+                "api_key": "App Key (AppKey)",
+                "api_secret": "App Secret (AppSecret)"
+            }
+        },
+        "walmart": {
+            "fields": ["api_key"],
+            "labels": {
+                "api_key": "API Key"
+            }
+        },
+        "daraz": {
+            "fields": ["api_key"],
+            "labels": {
+                "api_key": "Parse.bot API Key"
+            }
+        },
+        "admitad": {
+            "fields": ["api_key", "associate_tag"],
+            "labels": {
+                "api_key": "Admitad API Key",
+                "associate_tag": "Campaign ID"
+            }
+        }
+    };
+
+    function updateFields() {
+        const provider = document.getElementById('provider_name').value;
+        const fieldMap = PROVIDER_FIELDS[provider];
+
+        // Hide all fields first
+        document.getElementById('field_api_key').style.display = 'none';
+        document.getElementById('field_api_secret').style.display = 'none';
+        document.getElementById('field_associate_tag').style.display = 'none';
+
+        if (!fieldMap) return;
+
+        // Show and label the required fields
+        fieldMap.fields.forEach(field => {
+            const div = document.getElementById('field_' + field);
+            if (div) {
+                div.style.display = 'block';
+                const label = document.getElementById('label_' + field);
+                if (label && fieldMap.labels[field]) {
+                    label.textContent = fieldMap.labels[field];
+                }
+            }
+        });
+    }
+
+    // ===== REMOVE PRODUCT FUNCTION (with debug) =====
+    window.removeProduct = function(index) {
+        console.log('🔍 removeProduct called with index:', index);
+        const product = document.getElementById('product-' + index);
+        console.log('🔍 Found product element:', product);
+        if (product) {
+            product.classList.add('hidden-product');
+            console.log('✅ hidden-product class added to product-', index);
+            console.log('✅ Product classes now:', product.className);
+        } else {
+            console.error('❌ Product element not found for index:', index);
+        }
+    };
+
+    // ===== REMOVE BUTTON FALLBACK (Event Delegation) =====
+    document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('btn-remove')) {
+            var productCard = e.target.closest('.product-card');
+            if (productCard) {
+                productCard.classList.add('hidden-product');
+            }
+        }
+    });
+
+    // Run on page load to handle pre-selected provider
+    document.addEventListener('DOMContentLoaded', updateFields);
+</script>
 
     <!-- 2. Search & Schedule Card -->
     <div class="card" style="background: #fff3cd;">
@@ -769,17 +1232,24 @@ AFFILIATE_HTML = """
             <input type="hidden" name="search_term" value="{{ search_term }}">
             
             {% for product in search_results %}
-            <div class="product-card">
+            <div class="product-card" id="product-{{ loop.index0 }}" style="{% if product.scheduled %}display:none;{% endif %}">
                 <img src="{{ product.image_url }}" alt="{{ product.name }}" class="product-image" onerror="this.src='https://via.placeholder.com/150'">
                 <div class="product-details">
                     <strong>{{ product.name }}</strong><br>
-                    <strong>Price:</strong> {{ product.price }}<br>
+                    <strong>Price:</strong> 
+                    {% if product.original_price %}
+                        <del>${{ product.original_price }}</del> 
+                    {% endif %}
+                    <strong>${{ product.price }}</strong><br>
                     <strong>Description:</strong><br>
-                    <textarea name="desc_{{ loop.index0 }}">{{ product.description }}</textarea>
+                    <textarea name="desc_{{ loop.index0 }}">{{ product.description or 'No description available. Please check the product link for details.' }}</textarea>
                     <div class="inline-flex">
                         <label>Schedule for:</label>
                         <input type="datetime-local" name="time_{{ loop.index0 }}" value="{{ default_time }}" required>
+                        <input type="hidden" name="product_id_{{ loop.index0 }}" value="{{ product.product_id }}">
                         <button type="submit" name="schedule_index" value="{{ loop.index0 }}" class="btn-success">📅 Schedule This Product</button>
+                        <a href="{{ product.product_url }}" target="_blank" class="btn-warning" style="padding:8px 16px; text-decoration:none; border-radius:5px;">🔗 View on AliExpress</a>
+                        <button type="button" onclick="removeProduct('{{ loop.index0 }}')" class="btn-remove">✖ Remove</button>
                     </div>
                 </div>
             </div>
@@ -793,10 +1263,14 @@ AFFILIATE_HTML = """
         <h3>📋 Scheduled Affiliate Posts ({{ scheduled_posts|length }})</h3>
         {% if scheduled_posts %}
             {% for post in scheduled_posts %}
-            <div class="queue-item">
-                <span><strong>{{ post.search_term }}</strong> | Page: {{ post.page_id }} | Time: {{ post.scheduled_time }}</span>
+            <div class="queue-item" style="display:flex; align-items:center; gap:15px; padding:12px; border-bottom:1px solid #eee;">
+                <img src="{{ post.product_image or 'https://via.placeholder.com/50' }}" alt="{{ post.product_name }}" style="width:50px; height:50px; object-fit:contain; border-radius:5px; border:1px solid #ddd;">
+                <div style="flex:1;">
+                    <strong>{{ post.product_name or post.search_term }}</strong><br>
+                    <span style="font-size:12px; color:#888;">Page: {{ post.page_name or post.page_id }} | Time: {{ post.scheduled_time }}</span>
+                </div>
                 <form method="POST" action="/cancel_scheduled/{{ post.id }}" style="display:inline;">
-                    <button type="submit" class="btn-danger" style="padding: 2px 10px;">🗑️ Cancel</button>
+                    <button type="submit" class="btn-danger" style="padding: 4px 12px;">🗑️ Cancel</button>
                 </form>
             </div>
             {% endfor %}
@@ -814,7 +1288,9 @@ def affiliate_dashboard():
     config = load_config()
     providers = config.get("affiliate_providers", [])
     pages = config.get("pages", [])
-    scheduled = config.get("scheduled_affiliate_posts", [])
+    # Filter out posted posts
+    all_scheduled = config.get("scheduled_affiliate_posts", [])
+    scheduled = [p for p in all_scheduled if not p.get("posted", False)]
     return render_template_string(
         AFFILIATE_HTML,
         providers=providers,
@@ -830,7 +1306,8 @@ def affiliate_dashboard():
 @app.route("/search_products", methods=["POST"])
 @requires_auth
 def search_products():
-    from src.utils.affiliate_api import search_products
+    from src.utils.affiliate_api import search_products as search_products_api
+    
     config = load_config()
     page_id = request.form.get("page_id")
     provider_name = request.form.get("provider_name")
@@ -839,20 +1316,27 @@ def search_products():
     # Get provider credentials
     provider = None
     for p in config.get("affiliate_providers", []):
-        if p["nickname"] == provider_name:
+        if p["nickname"] == provider_name or p["provider_type"] == provider_name:
             provider = p
             break
     
     if not provider:
         return "Provider not found", 400
     
-    # Fetch products (Placeholder - will be replaced with real API)
-    products = search_products(provider, search_term)
+    # Fetch products using the universal engine
+    products = search_products_api(provider, search_term)
+    
+    # Filter out products that are already scheduled
+    all_scheduled = config.get("scheduled_affiliate_posts", [])
+    scheduled_ids = [p.get("product_id") for p in all_scheduled if p.get("product_id")]
+    products = [p for p in products if p.get("product_id") not in scheduled_ids]
     
     # Re-render the page with results
     providers = config.get("affiliate_providers", [])
     pages = config.get("pages", [])
-    scheduled = config.get("scheduled_affiliate_posts", [])
+    # Filter out posted posts
+    all_scheduled = config.get("scheduled_affiliate_posts", [])
+    scheduled = [p for p in all_scheduled if not p.get("posted", False)]
     
     from datetime import datetime, timedelta
     default_time = (datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M")
@@ -884,10 +1368,9 @@ def schedule_affiliate_posts():
     if schedule_index is None or search_term is None:
         return "Missing product data", 400
     
-    import uuid
     index = int(schedule_index)
     
-    # Get description and time from the form
+    # Get description and time using the index
     desc_key = f"desc_{index}"
     description = request.form.get(desc_key, "")
     time_key = f"time_{index}"
@@ -896,12 +1379,41 @@ def schedule_affiliate_posts():
     if not scheduled_time:
         return "Scheduled time is required", 400
     
-    # Create scheduled post entry
+    # ---- 1. Read the product ID from the hidden field ----
+    product_id = request.form.get(f"product_id_{index}")
+    
+    # ---- 2. Find the provider ----
+    provider = None
+    for p in config.get("affiliate_providers", []):
+        if p["nickname"] == provider_name:
+            provider = p
+            break
+    
+    # ---- 3. Fetch raw products (unfiltered) ----
+    raw_products = []
+    if provider:
+        from src.utils.affiliate_api import search_products
+        raw_products = search_products(provider, search_term)
+    
+    # ---- 4. Select product using product_id ----
+    selected_product = {}
+    if product_id:
+        # Match by ID
+        selected_product = next((p for p in raw_products if str(p.get("product_id", "")) == str(product_id)), {})
+    
+    # Fallback to index if not found (should not happen)
+    if not selected_product and raw_products and index < len(raw_products):
+        selected_product = raw_products[index]
+    
+    # ---- 5. Create the scheduled post ----
     new_post = {
         "id": str(uuid.uuid4())[:8],
         "page_id": page_id,
         "provider_name": provider_name,
         "search_term": search_term,
+        "product_id": selected_product.get("product_id", ""),
+        "product_name": selected_product.get("name", search_term),
+        "product_image": selected_product.get("image_url", ""),
         "description_override": description,
         "scheduled_time": scheduled_time,
         "posted": False,
@@ -909,7 +1421,31 @@ def schedule_affiliate_posts():
     }
     config["scheduled_affiliate_posts"].append(new_post)
     save_config(config)
-    return redirect(url_for("affiliate_dashboard"))
+    
+    # ---- 6. Filter for display (hide scheduled) ----
+    all_scheduled = config.get("scheduled_affiliate_posts", [])
+    scheduled_ids = [p.get("product_id") for p in all_scheduled if p.get("product_id")]
+    display_products = [p for p in raw_products if p.get("product_id") not in scheduled_ids]
+    
+    # ---- 7. Prepare and render ----
+    providers = config.get("affiliate_providers", [])
+    pages = config.get("pages", [])
+    scheduled = [p for p in all_scheduled if not p.get("posted", False)]
+    
+    from datetime import datetime, timedelta
+    default_time = (datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M")
+    
+    return render_template_string(
+        AFFILIATE_HTML,
+        providers=providers,
+        pages=pages,
+        scheduled_posts=scheduled,
+        search_results=display_products,
+        current_page_id=page_id,
+        current_provider=provider_name,
+        default_time=default_time,
+        search_term=search_term
+    )
 
 @app.route("/cancel_scheduled/<post_id>", methods=["POST"])
 @requires_auth
@@ -925,18 +1461,58 @@ def add_provider():
     config = load_config()
     if "affiliate_providers" not in config:
         config["affiliate_providers"] = []
-    import uuid
+
     provider_id = str(uuid.uuid4())[:8]
+
+    # Get user input
+    provider_name = request.form.get("provider_name", "").strip().lower()
+    api_key = request.form.get("api_key", "").strip()
+    api_secret = request.form.get("api_secret", "").strip()
+    associate_tag = request.form.get("associate_tag", "").strip()
+
+    # Load drivers
+    drivers = load_drivers()
+
+    # Check if we have a driver for this provider
+    if provider_name in drivers:
+        provider_config = drivers[provider_name].copy()
+        print(f"✅ Driver found for '{provider_name}'")
+    else:
+        print(f"⚠️ No driver found for '{provider_name}'. Saving basic config.")
+        provider_config = {}
+
+    # Inject user credentials
+    provider_config["api_key"] = api_key
+    provider_config["api_secret"] = api_secret
+    provider_config["associate_tag"] = associate_tag
+
+    # Replace placeholders in headers, static_params, and body_data
+    if "headers" in provider_config:
+        for key, value in provider_config["headers"].items():
+            if isinstance(value, str):
+                provider_config["headers"][key] = value.replace("{{api_secret}}", api_secret).replace("{{api_key}}", api_key)
+
+    if "static_params" in provider_config:
+        for key, value in provider_config["static_params"].items():
+            if isinstance(value, str):
+                provider_config["static_params"][key] = value.replace("{{associate_tag}}", associate_tag).replace("{{api_key}}", api_key)
+
+    if "body_data" in provider_config:
+        for key, value in provider_config["body_data"].items():
+            if isinstance(value, str):
+                provider_config["body_data"][key] = value.replace("{{associate_tag}}", associate_tag).replace("{{api_key}}", api_key)
+
+    # Save everything
     new_provider = {
         "id": provider_id,
-        "provider_type": request.form.get("provider_name", "").strip(),
+        "provider_type": provider_name,
         "nickname": request.form.get("provider_name", "").strip(),
-        "api_key": request.form.get("api_key", "").strip(),
-        "api_secret": request.form.get("api_secret", "").strip(),
-        "associate_tag": request.form.get("associate_tag", "").strip(),
+        **provider_config
     }
+
     config["affiliate_providers"].append(new_provider)
     save_config(config)
+    print(f"✅ Provider '{provider_name}' saved successfully.")
     return redirect(url_for("affiliate_dashboard"))
 
 @app.route("/delete_provider/<provider_id>", methods=["POST"])
@@ -946,7 +1522,6 @@ def delete_provider(provider_id):
     config["affiliate_providers"] = [p for p in config.get("affiliate_providers", []) if p["id"] != provider_id]
     save_config(config)
     return redirect(url_for("affiliate_dashboard"))
-
 
 @app.route("/toggle_pause", methods=["POST"])
 @requires_auth
@@ -1014,10 +1589,128 @@ def run_scheduler():
 
     return "Scheduler checked.", 200
 
+def post_affiliate_product(scheduled_post, page):
+    """
+    Takes a scheduled affiliate post, fetches the product again,
+    and uses the AI Engine to create a post based on the Page's Brief.
+    """
+    config = load_config()
+    
+    # 1. Find the provider
+    provider = None
+    for p in config.get("affiliate_providers", []):
+        if p["nickname"] == scheduled_post["provider_name"]:
+            provider = p
+            break
+
+    if not provider:
+        print(f"❌ Provider '{scheduled_post['provider_name']}' not found.")
+        return None
+
+    # 2. Fetch products
+    from src.utils.affiliate_api import search_products
+    products = search_products(provider, scheduled_post["search_term"])
+    if not products:
+        print(f"❌ No products found for '{scheduled_post['search_term']}'.")
+        return None
+
+    # 3. Use the first product
+    product = products[0]
+
+    # 4. Get the affiliate link (fallback to product URL if missing)
+    affiliate_link = product.get('affiliate_link') or product.get('product_url', '')
+
+    # 5. Build a prompt for the AI using the Page's Brief
+    prompt = f"""
+You are a social media copywriter for a Facebook page.
+
+Page Brief: {page.get('brief', '')}
+
+Product Details:
+- Name: {product.get('name', 'Product')}
+- Price: {product.get('price', 'N/A')}
+- Affiliate Link: {affiliate_link}
+
+Write a short, engaging Facebook post that promotes this product.
+- Use emojis.
+- Keep it under 200 words.
+- End with the affiliate link on a new line.
+- Do not include any extra text, just the post.
+"""
+
+    # 6. Generate the post using AI (same provider priority as the page)
+    formatted_post = None
+    priority_list = page.get("provider_priority", "gemini").split(",")
+    priority_list = [p.strip() for p in priority_list if p.strip()]
+
+    for provider_name in priority_list:
+        api_key = get_api_key(provider_name)
+        if not api_key:
+            continue
+        try:
+            if provider_name == "groq":
+                from groq import Groq
+                model = get_model_name("groq") or "openai/gpt-oss-120b"
+                client = Groq(api_key=api_key)
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                formatted_post = response.choices[0].message.content
+                break
+            else:  # Gemini or others
+                from google import genai
+                model = get_model_name(provider_name) or "models/gemini-3.5-flash"
+                client = genai.Client(api_key=api_key)
+                response = client.models.generate_content(
+                    model=model, contents=prompt
+                )
+                formatted_post = response.text.strip()
+                break
+        except Exception as e:
+            print(f"⚠️ AI provider {provider_name} failed: {e}")
+            continue
+
+    # If AI generation fails, fallback to a simple message
+    if not formatted_post:
+        print("⚠️ AI generation failed. Using fallback message.")
+        formatted_post = f"""🔥 NEW DEAL ALERT! 🇵🇰
+
+🛍️ {product.get('name', 'Product')}
+💰 {product.get('price', 'N/A')}
+
+🔗 Grab it now: {affiliate_link}
+
+#DealAlert #Pakistan #Shopping"""
+
+    # 7. Post to Facebook using the image URL directly (NO DOWNLOAD)
+    from src.core.facebook_client import post_to_facebook
+    
+    print(f"📤 Posting to Facebook using AI-generated text...")
+    
+    # Get the image URL (the bot already has it from the search)
+    image_url = product.get("image_url")
+    if image_url:
+        print(f"📸 Using image URL: {image_url[:100]}...")
+    else:
+        print("⚠️ No image URL available for this product.")
+
+    # Call post_to_facebook with the URL (Facebook will download it)
+    post_id = post_to_facebook(
+        access_token=page["token"],
+        page_id=page["id"],
+        message=formatted_post,
+        image_url=image_url  # <-- Pass URL directly, no download needed!
+    )
+
+    return post_id
 
 # --- Background Scheduler (Round-Robin) ---
 def bot_scheduler():
+    print("🟢 Bot scheduler started! Running every 60 seconds.")
     while True:
+        print(f"🔄 Scheduler loop running at {time.strftime('%H:%M:%S')}")
+        
         # ---- Check if bot is paused ----
         if BOT_PAUSED:
             print("⏸️ Bot is paused. Waiting...")
@@ -1056,25 +1749,52 @@ def bot_scheduler():
         # ---- Check Scheduled Affiliate Posts ----
         config = load_config()
         scheduled_posts = config.get("scheduled_affiliate_posts", [])
+        print(f"📋 Found {len(scheduled_posts)} scheduled affiliate posts")
         now = time.time()
         
         for post in scheduled_posts:
-            if post.get("posted"):
+            if post.get("posted") == True:
+                print(f"⏭️ Skipping already posted post: {post.get('id', 'unknown')}")
                 continue
-            # Check if time is due (convert string to timestamp)
+            
             try:
                 from datetime import datetime
                 post_time = datetime.strptime(post["scheduled_time"], "%Y-%m-%dT%H:%M")
                 post_timestamp = post_time.timestamp()
+                print(f"🔍 Checking post: {post.get('search_term', 'No term')[:30]}... due at {post['scheduled_time']}")
+                print(f"   ➡️ Time difference: {post_timestamp - now:.0f} seconds")
+                
                 if now >= post_timestamp:
-                    print(f"⏰ Affiliate post due for: {post['search_term']}")
-                    # We will implement the actual posting logic in the next step
-                    # For now, mark as posted to avoid loop
-                    post["posted"] = True
+                    print(f"⏰ Affiliate post due for: {post.get('search_term', 'No term')}")
+                    
+                    # Find the page
+                    page = None
+                    for p in config.get("pages", []):
+                        if p["id"] == post["page_id"]:
+                            page = p
+                            break
+                    
+                    if not page:
+                        print(f"❌ Page {post['page_id']} not found.")
+                        post["posted"] = True
+                        save_config(config)
+                        continue
+                    
+                    print("📤 Calling post_affiliate_product...")
+                    post_id = post_affiliate_product(post, page)
+                    
+                    if post_id:
+                        # Remove from queue instead of just marking as posted
+                        config["scheduled_affiliate_posts"] = [p for p in config.get("scheduled_affiliate_posts", []) if p["id"] != post["id"]]
+                        print(f"✅ Affiliate post published! ID: {post_id} (Removed from queue)")
+                    else:
+                        print(f"❌ Failed to post affiliate product. Will retry later.")
                     save_config(config)
-                    print(f"✅ Affiliate post would be sent now (placeholder).")
+                    
             except Exception as e:
-                print(f"⚠️ Error processing scheduled post {post.get('id')}: {e}")
+                print(f"⚠️ Error processing scheduled post {post.get('id', 'unknown')}: {e}")
+                import traceback
+                traceback.print_exc()
 
         time.sleep(60)
 
@@ -1090,10 +1810,15 @@ if __name__ == "__main__":
         try:
             from src.core.telegram_bot import start_telegram_bot
             start_telegram_bot(telegram_token)
+        except AttributeError as e:
+            if "_Updater__polling_cleanup_cb" in str(e):
+                print("⚠️ Telegram library conflict detected. Skipping Telegram.")
+            else:
+                print(f"❌ Telegram bot failed to start: {e}")
         except Exception as e:
             print(f"❌ Telegram bot failed to start: {e}")
     else:
-        print("ℹ️ No Telegram token found. Bot disabled.")
+        print("ℹ️ No Telegram token found. Skipping Telegram.")
     
     threading.Thread(target=bot_scheduler, daemon=True).start()
     import webbrowser, time
