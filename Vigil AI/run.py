@@ -1579,13 +1579,16 @@ def run_scheduler():
             time.sleep(10)
 
         # ---- Engagement Logic (once per 24 hours) ----
-        engagement_interval = 24 * 3600  # 24 hours
+        engagement_interval = 24 * 3600
         if (now - p.get("last_engagement", 0)) > engagement_interval:
             print(f"🤝 Running engagement for {p['id']}")
             run_engagement(p)
             p["last_engagement"] = now
             save_config(config)
             time.sleep(5)
+
+    # ---- NEW: Process scheduled affiliate posts ----
+    process_affiliate_posts()
 
     return "Scheduler checked.", 200
 
@@ -1704,6 +1707,41 @@ Write a short, engaging Facebook post that promotes this product.
     )
 
     return post_id
+
+def process_affiliate_posts():
+    """Check and publish due affiliate posts."""
+    config = load_config()
+    scheduled_posts = config.get("scheduled_affiliate_posts", [])
+    if not scheduled_posts:
+        print("📋 No scheduled affiliate posts.")
+        return
+
+    now = time.time()
+    for post in scheduled_posts:
+        if post.get("posted"):
+            continue
+        try:
+            from datetime import datetime
+            post_time = datetime.strptime(post["scheduled_time"], "%Y-%m-%dT%H:%M")
+            if now >= post_time.timestamp():
+                print(f"⏰ Affiliate post due for: {post.get('search_term', 'No term')}")
+                page = next((p for p in config.get("pages", []) if p["id"] == post["page_id"]), None)
+                if not page:
+                    print(f"❌ Page {post['page_id']} not found.")
+                    post["posted"] = True
+                    save_config(config)
+                    continue
+                post_id = post_affiliate_product(post, page)
+                if post_id:
+                    config["scheduled_affiliate_posts"] = [p for p in config.get("scheduled_affiliate_posts", []) if p["id"] != post["id"]]
+                    print(f"✅ Affiliate post published! ID: {post_id}")
+                else:
+                    print(f"❌ Failed to post affiliate product. Will retry later.")
+                save_config(config)
+        except Exception as e:
+            print(f"⚠️ Error processing scheduled post {post.get('id', 'unknown')}: {e}")
+            import traceback
+            traceback.print_exc()
 
 # --- Background Scheduler (Round-Robin) ---
 def bot_scheduler():
