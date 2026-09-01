@@ -660,12 +660,16 @@ def run_engine_2(page):
         # ---- Cross-Posting to Twitter (Per Page) ----
         try:
             from src.core.twitter_client import post_to_twitter
-            # Use page-specific keys if available, otherwise fallback to global
-            consumer_key = page.get("twitter_consumer_key") or config.get("twitter_credentials", {}).get("consumer_key")
-            consumer_secret = page.get("twitter_consumer_secret") or config.get("twitter_credentials", {}).get("consumer_secret")
-            access_token = page.get("twitter_access_token") or config.get("twitter_credentials", {}).get("access_token")
-            access_token_secret = page.get("twitter_access_token_secret") or config.get("twitter_credentials", {}).get("access_token_secret")
-            if consumer_key and access_token:
+            
+            # Check if Twitter is enabled for this page AND global keys exist
+            twitter_enabled = page.get("twitter_enabled", False)
+            global_keys = config.get("twitter_credentials", {})
+            consumer_key = global_keys.get("consumer_key")
+            consumer_secret = global_keys.get("consumer_secret")
+            access_token = global_keys.get("access_token")
+            access_token_secret = global_keys.get("access_token_secret")
+            
+            if twitter_enabled and consumer_key and consumer_secret and access_token and access_token_secret:
                 tweet_text = formatted_post[:280]
                 tweet_id = post_to_twitter(
                     consumer_key=consumer_key,
@@ -677,6 +681,8 @@ def run_engine_2(page):
                 )
                 if tweet_id:
                     print(f"🐦 Cross-posted to Twitter: {tweet_id}")
+            elif twitter_enabled:
+                print("⚠️ Twitter is enabled for this page but global keys are missing. Please add them in Integrations.")
         except Exception as e:
             print(f"⚠️ Twitter cross-post failed: {e}")
 
