@@ -91,7 +91,15 @@ def start_telegram_bot(token):
     BOT_APP = application
 
     def run_polling():
-        application.run_polling()
+        try:
+            application.run_polling()
+        except AttributeError as e:
+            if "_Updater__polling_cleanup_cb" in str(e):
+                print("⚠️ Telegram bot disabled (library version mismatch). To enable, run: pip install python-telegram-bot==20.7")
+            else:
+                print(f"⚠️ Telegram bot error: {e}")
+        except Exception as e:
+            print(f"⚠️ Telegram bot error: {e}")
 
     thread = threading.Thread(target=run_polling, daemon=True)
     thread.start()

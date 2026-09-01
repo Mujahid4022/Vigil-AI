@@ -64,45 +64,64 @@ def add_utm_to_text(text):
 # 1. Post text with an optional image to a Facebook Page
 # ----------------------------------------------------------------------
 def post_to_facebook(
-    access_token: str, page_id: str, message: str, image_path: str = None
+    access_token: str, page_id: str, message: str, image_path: str = None, image_url: str = None
 ) -> str:
     """
-    Posts a message (and optionally an image) to a Facebook Page.
-
-    Args:
-        access_token (str): Page access token.
-        page_id (str): The Facebook Page ID.
-        message (str): The text to post.
-        image_path (str, optional): Path to an image file. If provided,
-            we post as a photo; otherwise we post a simple status.
-
-    Returns:
-        str: The Facebook post ID if successful, or None on error.
+    Posts a message to a Facebook Page.
+    Supports image via local file (image_path) or public URL (image_url).
     """
     # ---- AUTOMATIC UTM INJECTION ----
     message = add_utm_to_text(message)
 
+    # ---- CASE 1: Upload local file (if provided) ----
     if image_path and os.path.exists(image_path):
-        photo_url = (
-            f"https://graph.facebook.com/{FB_GRAPH_API_VERSION}/{page_id}/photos"
-        )
-        with open(image_path, "rb") as img_file:
-            files = {"source": img_file}
-            data = {"message": message, "access_token": access_token}
-            response = requests.post(photo_url, files=files, data=data)
-    else:
-        url = f"https://graph.facebook.com/{FB_GRAPH_API_VERSION}/{page_id}/feed"
-        payload = {"message": message, "access_token": access_token}
-        response = requests.post(url, data=payload)
+        try:
+            photo_url = f"https://graph.facebook.com/{FB_GRAPH_API_VERSION}/{page_id}/photos"
+            with open(image_path, "rb") as img_file:
+                files = {"source": img_file}
+                data = {"message": message, "access_token": access_token}
+                response = requests.post(photo_url, files=files, data=data)
+            if response.status_code == 200:
+                result = response.json()
+                print(f"✅ Photo (file) post successful! ID: {result.get('id')}")
+                return result.get("id")
+            else:
+                print(f"⚠️ File upload failed: {response.json()}")
+        except Exception as e:
+            print(f"⚠️ File upload error: {e}")
 
+    # ---- CASE 2: Let Facebook fetch the image via URL (NEW - Best for AliExpress) ----
+    if image_url:
+        try:
+            print(f"📸 Asking Facebook to fetch image from URL: {image_url[:100]}...")
+            photo_url = f"https://graph.facebook.com/{FB_GRAPH_API_VERSION}/{page_id}/photos"
+            data = {
+                "url": image_url,  # Facebook downloads this for us!
+                "message": message,
+                "access_token": access_token,
+            }
+            response = requests.post(photo_url, data=data)
+            if response.status_code == 200:
+                result = response.json()
+                print(f"✅ Photo (URL) post successful! ID: {result.get('id')}")
+                return result.get("id")
+            else:
+                error = response.json()
+                print(f"❌ Facebook URL upload failed: {error}")
+        except Exception as e:
+            print(f"❌ URL upload error: {e}")
+
+    # ---- CASE 3: Fallback to text-only ----
+    print("📝 No image uploaded. Posting text only.")
+    url = f"https://graph.facebook.com/{FB_GRAPH_API_VERSION}/{page_id}/feed"
+    payload = {"message": message, "access_token": access_token}
+    response = requests.post(url, data=payload)
     if response.status_code == 200:
         result = response.json()
-        post_id = result.get("id")
-        print(f"✅ Post successful! ID: {post_id}")
-        return post_id
+        print(f"✅ Text post successful! ID: {result.get('id')}")
+        return result.get("id")
     else:
-        error = response.json()
-        print(f"❌ Facebook error: {error}")
+        print(f"❌ Text post failed: {response.json()}")
         return None
 
 
