@@ -1617,8 +1617,16 @@ def post_affiliate_product(scheduled_post, page):
         print(f"❌ No products found for '{scheduled_post['search_term']}'.")
         return None
 
-    # 3. Use the first product
-    product = products[0]
+    # 3. Find the specific product using the stored product_id
+    stored_product_id = scheduled_post.get("product_id")
+    product = None
+    if stored_product_id:
+        product = next((p for p in products if str(p.get("product_id", "")) == str(stored_product_id)), None)
+    
+    # Fallback to first product if not found (should not happen)
+    if not product:
+        print(f"⚠️ Product with ID {stored_product_id} not found. Using first product as fallback.")
+        product = products[0]
 
     # 4. Get the affiliate link (fallback to product URL if missing)
     affiliate_link = product.get('affiliate_link') or product.get('product_url', '')
@@ -1641,7 +1649,7 @@ Write a short, engaging Facebook post that promotes this product.
 - Do not include any extra text, just the post.
 """
 
-    # 6. Generate the post using AI (same provider priority as the page)
+    # 6. Generate the post using AI (same as before)
     formatted_post = None
     priority_list = page.get("provider_priority", "gemini").split(",")
     priority_list = [p.strip() for p in priority_list if p.strip()]
@@ -1686,24 +1694,22 @@ Write a short, engaging Facebook post that promotes this product.
 
 #DealAlert #Pakistan #Shopping"""
 
-    # 7. Post to Facebook using the image URL directly (NO DOWNLOAD)
+    # 7. Post to Facebook
     from src.core.facebook_client import post_to_facebook
     
     print(f"📤 Posting to Facebook using AI-generated text...")
     
-    # Get the image URL (the bot already has it from the search)
     image_url = product.get("image_url")
     if image_url:
         print(f"📸 Using image URL: {image_url[:100]}...")
     else:
         print("⚠️ No image URL available for this product.")
 
-    # Call post_to_facebook with the URL (Facebook will download it)
     post_id = post_to_facebook(
         access_token=page["token"],
         page_id=page["id"],
         message=formatted_post,
-        image_url=image_url  # <-- Pass URL directly, no download needed!
+        image_url=image_url
     )
 
     return post_id
