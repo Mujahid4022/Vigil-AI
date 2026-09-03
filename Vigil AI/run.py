@@ -1237,10 +1237,18 @@ AFFILIATE_HTML = """
                 <div class="product-details">
                     <strong>{{ product.name }}</strong><br>
                     <strong>Price:</strong> 
-                    {% if product.original_price %}
-                        <del>${{ product.original_price }}</del> 
+                    {% if product.sale_price_cny and product.sale_price_usd %}
+                        {{ product.sale_price_cny }} {{ product.currency_cny }} (~{{ product.sale_price_usd }} {{ product.currency_usd }})
+                        {% if product.original_price_cny and product.original_price_usd %}
+                            <del>{{ product.original_price_cny }} {{ product.currency_cny }} (~{{ product.original_price_usd }} {{ product.currency_usd }})</del>
+                        {% endif %}
+                    {% else %}
+                        {% if product.original_price %}
+                            <del>${{ product.original_price }}</del> 
+                        {% endif %}
+                        <strong>${{ product.price }}</strong>
                     {% endif %}
-                    <strong>${{ product.price }}</strong><br>
+                    <br>
                     <strong>Description:</strong><br>
                     <textarea name="desc_{{ loop.index0 }}">{{ product.description or 'No description available. Please check the product link for details.' }}</textarea>
                     <div class="inline-flex">
@@ -1631,7 +1639,27 @@ def post_affiliate_product(scheduled_post, page):
     # 4. Get the affiliate link (fallback to product URL if missing)
     affiliate_link = product.get('affiliate_link') or product.get('product_url', '')
 
-    # 5. Build a prompt for the AI using the Page's Brief
+    # ==============================================================
+    # 5. Extract both currencies (CNY and USD) from the product
+    # ==============================================================
+    sale_usd = product.get('sale_price_usd', 'N/A')
+    sale_cny = product.get('sale_price_cny', 'N/A')
+    currency_usd = product.get('currency_usd', 'USD')
+    currency_cny = product.get('currency_cny', 'CNY')
+
+    original_usd = product.get('original_price_usd', 'N/A')
+    original_cny = product.get('original_price_cny', 'N/A')
+
+    # Build combined price strings
+    price_display = f"{sale_cny} {currency_cny} (~{sale_usd} {currency_usd})"
+    original_price_display = f"{original_cny} {currency_cny} (~{original_usd} {currency_usd})"
+
+    print(f"💰 Price (CNY/USD): {price_display}")
+    print(f"💰 Original Price (CNY/USD): {original_price_display}")
+
+    # ==============================================================
+    # 6. Build the AI prompt using the combined prices
+    # ==============================================================
     prompt = f"""
 You are a social media copywriter for a Facebook page.
 
@@ -1639,7 +1667,8 @@ Page Brief: {page.get('brief', '')}
 
 Product Details:
 - Name: {product.get('name', 'Product')}
-- Price: {product.get('price', 'N/A')}
+- Price: {price_display}
+- Original Price: {original_price_display}
 - Affiliate Link: {affiliate_link}
 
 Write a short, engaging Facebook post that promotes this product.
@@ -1649,7 +1678,7 @@ Write a short, engaging Facebook post that promotes this product.
 - Do not include any extra text, just the post.
 """
 
-    # 6. Generate the post using AI (same as before)
+    # 7. Generate the post using AI (same as before)
     formatted_post = None
     priority_list = page.get("provider_priority", "gemini").split(",")
     priority_list = [p.strip() for p in priority_list if p.strip()]
@@ -1688,13 +1717,13 @@ Write a short, engaging Facebook post that promotes this product.
         formatted_post = f"""🔥 NEW DEAL ALERT! 🇵🇰
 
 🛍️ {product.get('name', 'Product')}
-💰 {product.get('price', 'N/A')}
+💰 {price_display}  (was {original_price_display})
 
 🔗 Grab it now: {affiliate_link}
 
 #DealAlert #Pakistan #Shopping"""
 
-    # 7. Post to Facebook
+    # 8. Post to Facebook
     from src.core.facebook_client import post_to_facebook
     
     print(f"📤 Posting to Facebook using AI-generated text...")
