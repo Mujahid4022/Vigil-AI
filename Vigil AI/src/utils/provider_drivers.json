@@ -13,14 +13,19 @@
     "field_mapping": {
       "product_id": "product_id",
       "name": "product_title",
-      "price": "app_sale_price",
-      "original_price": "original_price",
-      "currency": "currency_code",
-      "description": "product_description",
+      "price": "target_sale_price",
+      "currency": "target_sale_price_currency",
       "image_url": "product_small_image_urls.string.0",
       "product_url": "product_detail_url",
-      "affiliate_link": "promotion_link"
+      "affiliate_link": "promotion_link",
+      "sale_price_usd": "target_sale_price",
+      "currency_usd": "target_sale_price_currency",
+      "sale_price_cny": "app_sale_price",
+      "currency_cny": "app_sale_price_currency",
+      "original_price_usd": "target_original_price",
+      "original_price_cny": "original_price"
     },
+    
     "static_params": {
       "method": "aliexpress.affiliate.product.query",
       "format": "json",

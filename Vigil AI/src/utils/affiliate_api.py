@@ -289,7 +289,7 @@ def call_generic_api(provider: Dict[str, Any], search_term: str) -> List[Dict[st
         
         # ===== DEBUG: Print full response for troubleshooting =====
         print(f"📝 Full API response (first 1000 chars):")
-        print(json.dumps(data, indent=2)[:1000])
+        print(json.dumps(data, indent=2))
         print("=" * 60)
         # ========================================================
 
@@ -329,10 +329,11 @@ def call_generic_api(provider: Dict[str, Any], search_term: str) -> List[Dict[st
 
     products = []
     for item in raw_products:
+        print(f"🔍 RAW ITEM: price={item.get('app_sale_price')}, currency={item.get('currency_code')}")
         if not isinstance(item, dict):
             continue
-        
-        # Extract product data
+    
+        # Extract default product data
         product = {
             "product_id": get_nested_value(item, mapping.get("product_id", "id"), ""),
             "name": get_nested_value(item, mapping.get("name", "name"), "Product"),
@@ -348,20 +349,27 @@ def call_generic_api(provider: Dict[str, Any], search_term: str) -> List[Dict[st
             "review_count": get_nested_value(item, mapping.get("review_count", "review_count"), ""),
         }
 
+        # ===== NEW: Extract extra fields from field_mapping =====
+        default_keys = set(default_mapping.keys())
+        for key, path in field_mapping.items():
+            if key not in default_keys:
+                product[key] = get_nested_value(item, path, "")
+
         # Fix AliExpress images (use a proxy)
         if product.get("image_url") and "aliexpress-media.com" in product["image_url"]:
             import urllib.parse
             product["image_url"] = f"https://images.weserv.nl/?url={urllib.parse.quote(product['image_url'])}"
-        
+    
         # Generate affiliate link
         product["affiliate_link"] = generate_affiliate_link(product, provider)
+        print(f"🧪 MAPPED PRODUCT: {product}")
 
         print(
             f"🖼️ Product image: "
             f"{product.get('name', '')[:50]} -> "
             f"{product.get('image_url', '')}"
         )
-        
+    
         products.append(product)
 
     print(f"✅ Found {len(products)} products.")
