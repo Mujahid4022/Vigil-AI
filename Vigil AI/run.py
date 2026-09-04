@@ -4,9 +4,11 @@ import time
 import threading
 import requests
 import uuid
+import pytz
 from flask import Flask, request, render_template_string, redirect, url_for
 from functools import wraps
 from flask import Response
+from datetime import datetime, timedelta
 from src.engines.engine_engagement import run_engagement
 
 # Import config functions
@@ -831,6 +833,11 @@ def add_page():
 def edit_page(page_id):
     config = load_config()
     new_token = None
+
+    # --- DEBUG: See what value was submitted ---
+    interval_received = request.form.get("edit_interval")
+    print(f"🔍 Received edit_interval: {interval_received}")
+
     for p in config["pages"]:
         if p["id"] == page_id:
             new_token = request.form.get("edit_token")
@@ -845,6 +852,10 @@ def edit_page(page_id):
             p["language"] = request.form.get("edit_language", "Urdu")
             p["brief"] = request.form.get("edit_brief")
             p["interval"] = int(request.form.get("edit_interval", 2))
+
+            # --- DEBUG: Confirm the value was set ---
+            print(f"✅ Set interval to {p['interval']} for page {page_id}")
+
             p["provider_priority"] = request.form.get(
                 "edit_provider_priority", "gemini"
             )
@@ -855,9 +866,14 @@ def edit_page(page_id):
             p["twitter_enabled"] = request.form.get("edit_twitter_enabled") == "true"
             p["lead_webhook_url"] = request.form.get("edit_lead_webhook", "")
             break
+
     if new_token is not None:
         update_env_token(page_id, new_token)
-        save_config(config)
+
+    # --- IMPORTANT: Always save config, even if token didn't change ---
+    save_config(config)
+    print("💾 Config saved.")
+
     return redirect(url_for("index"))
 
 
@@ -1383,6 +1399,13 @@ def schedule_affiliate_posts():
     description = request.form.get(desc_key, "")
     time_key = f"time_{index}"
     scheduled_time = request.form.get(time_key)
+    # ---- Convert local time (PKT) to UTC ----
+    from datetime import datetime
+    local_tz = pytz.timezone("Asia/Karachi")  # Change to your timezone if different
+    local_time = datetime.strptime(scheduled_time, "%Y-%m-%dT%H:%M")
+    local_time = local_tz.localize(local_time)       # attach timezone info (PKT)
+    utc_time = local_time.astimezone(pytz.UTC)       # convert to UTC
+    scheduled_time_utc = utc_time.strftime("%Y-%m-%dT%H:%M")
     
     if not scheduled_time:
         return "Scheduled time is required", 400
@@ -1423,7 +1446,7 @@ def schedule_affiliate_posts():
         "product_name": selected_product.get("name", search_term),
         "product_image": selected_product.get("image_url", ""),
         "description_override": description,
-        "scheduled_time": scheduled_time,
+        "scheduled_time": scheduled_time_utc,
         "posted": False,
         "fb_post_id": None
     }
