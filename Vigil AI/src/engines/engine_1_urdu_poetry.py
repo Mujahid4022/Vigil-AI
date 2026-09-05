@@ -593,25 +593,35 @@ def run_engine_1(page):
         # --- Language instruction ---
         lang_instruction = ""
         if language == "Urdu":
-            lang_instruction = (
-                "Write the post exclusively in Urdu (Nastaleeq style). Use emojis."
-            )
+            lang_instruction = "Write the post exclusively in Urdu (Nastaleeq style). Use emojis."
         elif language == "English":
             lang_instruction = "Write the post exclusively in English. Use emojis."
         elif language == "Both":
-            lang_instruction = (
-                "Write the post in both Urdu and English (side by side). Use emojis."
-            )
+            lang_instruction = "Write the post in both Urdu and English (side by side). Use emojis."
         else:
-            lang_instruction = (
-                "Write the post in the language that best fits the topic. Use emojis."
-            )
+            lang_instruction = "Write the post in the language that best fits the topic. Use emojis."
+
+        # ---- Dynamic rotation based on Brief ----
+        brief = page.get("brief", "")
+        rotation_prefix = "ROTATION_LIST:"
+        rotation_instruction = ""
+        if rotation_prefix in brief:
+            list_str = brief.split(rotation_prefix)[1].split("\n")[0].strip()
+            rotation_items = [item.strip() for item in list_str.split(",") if item.strip()]
+            if rotation_items:
+                idx = config.get("rotation_index", 0)
+                current_item = rotation_items[idx % len(rotation_items)]
+                config["rotation_index"] = (idx + 1) % len(rotation_items)
+                with open(CONFIG_FILE, "w") as f:
+                    json.dump(config, f, indent=4)
+                print(f"🔄 Rotation item: {current_item}")
+                rotation_instruction = f"Write a post specifically about: {current_item}.\n\n"
 
         # --- Build prompt ---
         if scraped_text:
-            prompt = f"{lang_instruction}\n\nContext/Brief: {page['brief']}\n\nScraped Data: {scraped_text}\n\nAlso, return a separate, single sentence in ENGLISH describing an image that represents this text, starting with 'IMAGE_PROMPT:'"
+            prompt = f"{rotation_instruction}{lang_instruction}\n\nContext/Brief: {page['brief']}\n\nScraped Data: {scraped_text}\n\nAlso, return a separate, single sentence in ENGLISH describing an image that represents this text, starting with 'IMAGE_PROMPT:'"
         else:
-            prompt = f"{lang_instruction}\n\nContext/Brief: {page['brief']}\n\nAlso, return a separate, single sentence in ENGLISH describing an image that represents this text, starting with 'IMAGE_PROMPT:'"
+            prompt = f"{rotation_instruction}{lang_instruction}\n\nContext/Brief: {page['brief']}\n\nAlso, return a separate, single sentence in ENGLISH describing an image that represents this text, starting with 'IMAGE_PROMPT:'"
 
         formatted_post = None
         image_prompt = None
