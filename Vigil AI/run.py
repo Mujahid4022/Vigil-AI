@@ -1688,7 +1688,7 @@ def post_affiliate_product(scheduled_post, page):
     affiliate_link = product.get('affiliate_link') or product.get('product_url', '')
 
     # ==============================================================
-    # 5. Extract both currencies (CNY and USD) from the product
+    # 5. Extract prices – only USD for display, but keep CNY for fallback
     # ==============================================================
     sale_usd = product.get('sale_price_usd', 'N/A')
     sale_cny = product.get('sale_price_cny', 'N/A')
@@ -1698,32 +1698,50 @@ def post_affiliate_product(scheduled_post, page):
     original_usd = product.get('original_price_usd', 'N/A')
     original_cny = product.get('original_price_cny', 'N/A')
 
-    # Build combined price strings
-    price_display = f"{sale_cny} {currency_cny} (~{sale_usd} {currency_usd})"
-    original_price_display = f"{original_cny} {currency_cny} (~{original_usd} {currency_usd})"
+    # ---- Build a clean, eye‑catching price block (USD only) ----
+    if sale_usd != 'N/A' and original_usd != 'N/A':
+        try:
+            sale = float(sale_usd)
+            original = float(original_usd)
+            if original > 0:
+                discount = int(((original - sale) / original) * 100)
+                price_display = f"💰 DEAL: {discount}% OFF!\n🪙 Now only ${sale:.2f} — was ${original:.2f}"
+            else:
+                price_display = f"🪙 Now only ${sale:.2f}"
+        except:
+            price_display = f"🪙 Now only ${sale_usd}"
+    else:
+        price_display = f"🪙 Now only ${sale_usd}"
 
-    print(f"💰 Price (CNY/USD): {price_display}")
-    print(f"💰 Original Price (CNY/USD): {original_price_display}")
+    # (Keep the CNY values for logging, but we won't use them in the prompt)
+    print(f"💰 Price (USD): {price_display}")
+    print(f"💰 Original (CNY/USD): {original_cny} {currency_cny} (~{original_usd} {currency_usd})")
 
     # ==============================================================
-    # 6. Build the AI prompt using the combined prices
+    # 6. Build the AI prompt using the new structured format
     # ==============================================================
+    product_name = product.get('name', 'Product')
+    product_description = product.get('description', '')
+
     prompt = f"""
 You are a social media copywriter for a Facebook page.
 
 Page Brief: {page.get('brief', '')}
 
 Product Details:
-- Name: {product.get('name', 'Product')}
+- Name: {product_name}
+- Description: {product_description}
 - Price: {price_display}
-- Original Price: {original_price_display}
 - Affiliate Link: {affiliate_link}
 
-Write a short, engaging Facebook post that promotes this product.
-- Use emojis.
-- Keep it under 200 words.
+Write a short, engaging Facebook post that promotes this product. Use emojis. Keep it under 200 words.
+The post should have:
+- A catchy headline (use the product name or a hook)
+- The price section (already provided in Price) – include it exactly as given.
+- Bullet points highlighting key features (extract from product description if available, otherwise make reasonable assumptions)
+- A call to action (e.g., "Grab yours now – limited stock!")
 - End with the affiliate link on a new line.
-- Do not include any extra text, just the post.
+- Do not include any extra text beyond the post.
 """
 
     # 7. Generate the post using AI (same as before)
@@ -1765,7 +1783,7 @@ Write a short, engaging Facebook post that promotes this product.
         formatted_post = f"""🔥 NEW DEAL ALERT! 🇵🇰
 
 🛍️ {product.get('name', 'Product')}
-💰 {price_display}  (was {original_price_display})
+{price_display}
 
 🔗 Grab it now: {affiliate_link}
 
