@@ -136,8 +136,8 @@ def generate_pollinations_image(prompt):
 def generate_agnes_image(prompt, api_key):
     """
     Generate an image using Agnes AI's OpenAI‑compatible API.
-    Tries multiple models in sequence.
-    Returns image bytes or None.
+    Returns a dict with 'url' (public URL) and 'bytes' (image bytes).
+    Returns None if both are unavailable.
     """
     import requests
     import base64
@@ -171,19 +171,18 @@ def generate_agnes_image(prompt, api_key):
 
             if response.status_code == 200:
                 data = response.json()
+                # Get the public URL (if available)
+                image_url = data.get("data", [{}])[0].get("url")
+                # Get Base64 data
                 b64_image = data.get("data", [{}])[0].get("b64_json")
+                image_bytes = None
                 if b64_image:
                     image_bytes = base64.b64decode(b64_image)
-                    print(f"✅ Agnes {model} succeeded (size: {len(image_bytes)} bytes)")
-                    return image_bytes
+
+                if image_url or image_bytes:
+                    print(f"✅ Agnes {model} succeeded")
+                    return {"url": image_url, "bytes": image_bytes}
                 else:
-                    # Try URL fallback
-                    image_url = data.get("data", [{}])[0].get("url")
-                    if image_url:
-                        img_resp = requests.get(image_url, timeout=30)
-                        if img_resp.status_code == 200:
-                            print(f"✅ Agnes {model} succeeded (URL download)")
-                            return img_resp.content
                     print(f"❌ No image data or URL for {model}. Trying next...")
             else:
                 print(f"❌ Agnes {model} error: {response.status_code}")
@@ -674,15 +673,41 @@ def run_engine_2(page):
         # ------------------------------------------------------------------
         # GENERATE IMAGE: Agnes AI -> Gemini -> Pollinations.ai
         # ------------------------------------------------------------------
+        agnes_result = None
         image_bytes = None
         if not skip_image:
             # Try Agnes AI first (free, unlimited, 4K)
             agnes_key = config.get("agnes_api", {}).get("key")
             if agnes_key:
                 print("🎨 Trying Agnes AI (free 4K)...")
-                image_bytes = generate_agnes_image(image_prompt, agnes_key)
+                agnes_result = generate_agnes_image(image_prompt, agnes_key)
+                if agnes_result:
+                    # If we have image bytes
+                    if agnes_result.get("bytes"):
+                        image_bytes = agnes_result["bytes"]
+                        print("✅ Agnes AI image bytes received.")
+                    # If we only have a URL (no bytes), download it
+                    elif agnes_result.get("url"):
+                        print(f"📸 Agnes returned URL: {agnes_result['url'][:60]}...")
+                        try:
+                            import requests
+                            resp = requests.get(agnes_result["url"], timeout=30)
+                            if resp.status_code == 200:
+                                image_bytes = resp.content
+                                print("✅ Agnes AI image downloaded from URL.")
+                            else:
+                                print(f"❌ Failed to download Agnes URL: {resp.status_code}")
+                                image_bytes = None
+                        except Exception as e:
+                            print(f"⚠️ Could not download Agnes URL: {e}")
+                            image_bytes = None
+                    else:
+                        print("❌ Agnes returned no data.")
+                        agnes_result = None
+                else:
+                    print("❌ Agnes failed (no result).")
             
-            # If Agnes fails, try Gemini
+            # If Agnes fails or didn't produce bytes, try Gemini
             if not image_bytes:
                 gemini_key = get_api_key("gemini")
                 if gemini_key:
@@ -764,24 +789,52 @@ def run_engine_2(page):
         if instagram_id:
             try:
                 from src.core.facebook_client import post_to_instagram
-                
-                # Use the Pollinations URL if we have an image prompt
-                # The image_prompt variable is already generated in your engine
-                if image_prompt:
+        
+                # Determine which image to use for Instagram
+                # If we have a local image file, use it (for Gemini/Agnes bytes)
+                # Otherwise try Agnes URL, then Pollinations URL.
+                ig_image = None
+                ig_image_type = None  # 'path', 'url'
+
+                # 1. Use local temp file if available (from Gemini or Agnes bytes)
+                if temp_image_path and os.path.exists(temp_image_path):
+                    ig_image = temp_image_path
+                    ig_image_type = 'path'
+                    print(f"📸 Instagram: Using local image file: {temp_image_path}")
+                # 2. Check if Agnes returned a public URL
+                elif agnes_result and agnes_result.get("url"):
+                    ig_image = agnes_result["url"]
+                    ig_image_type = 'url'
+                    print(f"📸 Instagram: Using Agnes public URL: {ig_image[:60]}...")
+                # 3. Fallback to Pollinations URL (if image_prompt exists)
+                elif image_prompt:
                     pollinations_url = f"https://image.pollinations.ai/prompt/{image_prompt}"
-                    print(f"📸 Instagram: Using Pollinations public URL...")
-                    ig_post_id = post_to_instagram(
-                        ig_user_id=instagram_id,
-                        access_token=page["token"],
-                        caption=formatted_post,
-                        image_url=pollinations_url,  # PUBLIC URL
-                    )
+                    ig_image = pollinations_url
+                    ig_image_type = 'url'
+                    print(f"📸 Instagram: Using Pollinations public URL")
+                else:
+                    print("⚠️ Instagram SKIPPED: No image source available.")
+                    ig_image = None
+
+                if ig_image:
+                    # Call the Instagram post function
+                    if ig_image_type == 'path':
+                        ig_post_id = post_to_instagram(
+                            ig_user_id=instagram_id,
+                            access_token=page["token"],
+                            caption=formatted_post,
+                            image_path=ig_image,
+                        )
+                    else:  # URL
+                        ig_post_id = post_to_instagram(
+                            ig_user_id=instagram_id,
+                            access_token=page["token"],
+                            caption=formatted_post,
+                            image_url=ig_image,
+                        )
                     if ig_post_id:
                         print(f"📸 Instagram posted successfully! ID: {ig_post_id}")
                     else:
                         print("❌ Instagram returned no ID.")
-                else:
-                    print("⚠️ Instagram SKIPPED: No image prompt available.")
-                    
             except Exception as e:
                 print(f"⚠️ Instagram error: {e}")
