@@ -130,6 +130,70 @@ def generate_pollinations_image(prompt):
         print(f"❌ Pollinations error: {e}")
         return None
 
+# ----------------------------------------------------------------------
+# Helper: Generate Image using Agnes AI (Free, unlimited, 4K)
+# ----------------------------------------------------------------------
+def generate_agnes_image(prompt, api_key):
+    """
+    Generate an image using Agnes AI's OpenAI‑compatible API.
+    Tries multiple models in sequence.
+    Returns image bytes or None.
+    """
+    import requests
+    import base64
+
+    # --- Agnes model list (in order of preference) ---
+    models = [
+        "agnes-image-2.5-flash",
+        "agnes-image-2.1-flash",
+        "agnes-image-2.0-flash"
+    ]
+
+    url = "https://apihub.agnes-ai.com/v1/images/generations"
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    for model in models:
+        print(f"🎨 Trying Agnes model: {model}")
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "size": "1024x1024",          # or "1024x768", "1K", etc.
+            "return_base64": True
+        }
+
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=60)
+            print(f"🔍 Agnes API status: {response.status_code}")
+
+            if response.status_code == 200:
+                data = response.json()
+                b64_image = data.get("data", [{}])[0].get("b64_json")
+                if b64_image:
+                    image_bytes = base64.b64decode(b64_image)
+                    print(f"✅ Agnes {model} succeeded (size: {len(image_bytes)} bytes)")
+                    return image_bytes
+                else:
+                    # Try URL fallback
+                    image_url = data.get("data", [{}])[0].get("url")
+                    if image_url:
+                        img_resp = requests.get(image_url, timeout=30)
+                        if img_resp.status_code == 200:
+                            print(f"✅ Agnes {model} succeeded (URL download)")
+                            return img_resp.content
+                    print(f"❌ No image data or URL for {model}. Trying next...")
+            else:
+                print(f"❌ Agnes {model} error: {response.status_code}")
+                print(f"   Response: {response.text[:200]}...")
+        except Exception as e:
+            print(f"❌ Agnes {model} exception: {e}. Trying next...")
+
+    print("❌ All Agnes models failed.")
+    return None
+
 
 # ----------------------------------------------------------------------
 # Helper: Proofread Urdu Text using the AI itself
@@ -608,19 +672,26 @@ def run_engine_1(page):
             print("ℹ️ Brief has no image restriction.")
 
         # ------------------------------------------------------------------
-        # GENERATE IMAGE: Gemini Imagen -> Pollinations.ai Fallback
+        # GENERATE IMAGE: Agnes AI -> Gemini -> Pollinations.ai
         # ------------------------------------------------------------------
         image_bytes = None
         if not skip_image:
-            gemini_key = get_api_key("gemini")
-            if gemini_key:
-                print("🎨 Trying Gemini Imagen (Nano Banana)...")
-                image_bytes = generate_image(image_prompt, gemini_key)
-
+            # Try Agnes AI first (free, unlimited, 4K)
+            agnes_key = config.get("agnes_api", {}).get("key")
+            if agnes_key:
+                print("🎨 Trying Agnes AI (free 4K)...")
+                image_bytes = generate_agnes_image(image_prompt, agnes_key)
+            
+            # If Agnes fails, try Gemini
             if not image_bytes:
-                print(
-                    "⚠️ Gemini failed or unavailable. Falling back to Pollinations.ai..."
-                )
+                gemini_key = get_api_key("gemini")
+                if gemini_key:
+                    print("🎨 Trying Gemini Imagen (Nano Banana)...")
+                    image_bytes = generate_image(image_prompt, gemini_key)
+            
+            # If Gemini fails, fallback to Pollinations.ai
+            if not image_bytes:
+                print("⚠️ Gemini failed or unavailable. Falling back to Pollinations.ai...")
                 image_bytes = generate_pollinations_image(image_prompt)
 
         # ------------------------------------------------------------------
