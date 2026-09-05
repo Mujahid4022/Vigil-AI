@@ -193,6 +193,72 @@ def generate_agnes_image(prompt, api_key):
     print("❌ All Agnes models failed.")
     return None
 
+# ----------------------------------------------------------------------
+# Helper: Get Facebook Public Image URL from Post ID
+# ----------------------------------------------------------------------
+def get_facebook_image_url(post_id, access_token):
+    """
+    Fetch the public image URL from a Facebook post or photo.
+    Tries: photo source → full_picture → attachments.
+    """
+    try:
+        # Approach 1: Try to fetch as a photo (since we upload via /photos)
+        photo_url = f"https://graph.facebook.com/v26.0/{post_id}?fields=source,images&access_token={access_token}"
+        resp = requests.get(photo_url, timeout=10)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            # Check for direct source URL
+            source = data.get("source")
+            if source:
+                print(f"✅ Found photo source URL: {source[:60]}...")
+                return source
+            # Check for images array (first image)
+            images = data.get("images", [])
+            if images and isinstance(images, list) and len(images) > 0:
+                src = images[0].get("source")
+                if src:
+                    print(f"✅ Found photo image URL: {src[:60]}...")
+                    return src
+        
+        # Approach 2: Try full_picture (works for feed posts)
+        feed_url = f"https://graph.facebook.com/v26.0/{post_id}?fields=full_picture,picture&access_token={access_token}"
+        resp = requests.get(feed_url, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            full_picture = data.get("full_picture")
+            if full_picture:
+                print(f"✅ Found full_picture: {full_picture[:60]}...")
+                return full_picture
+            picture = data.get("picture", {}).get("data", {}).get("url")
+            if picture:
+                print(f"✅ Found picture URL: {picture[:60]}...")
+                return picture
+        
+        # Approach 3: Try attachments (fallback)
+        att_url = f"https://graph.facebook.com/v26.0/{post_id}?fields=attachments&access_token={access_token}"
+        resp = requests.get(att_url, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            attachments = data.get("attachments", {}).get("data", [])
+            if attachments:
+                img = attachments[0].get("media", {}).get("image", {}).get("src")
+                if img:
+                    print(f"✅ Found attachment image: {img[:60]}...")
+                    return img
+                target = attachments[0].get("target", {}).get("url")
+                if target:
+                    print(f"✅ Found attachment target: {target[:60]}...")
+                    return target
+        
+        # If all fail, log the raw responses for debugging
+        print("⚠️ Could not retrieve Facebook image URL from any field.")
+        return None
+        
+    except Exception as e:
+        print(f"⚠️ Error fetching Facebook image URL: {e}")
+        return None
+
 
 # ----------------------------------------------------------------------
 # Helper: Proofread Urdu Text using the AI itself
@@ -736,10 +802,6 @@ def run_engine_2(page):
             image_path=temp_image_path,
         )
 
-        # Clean up temp file
-        if temp_image_path and os.path.exists(temp_image_path):
-            os.remove(temp_image_path)
-
         # ------------------------------------------------------------------
         # LOG PERFORMANCE IF POST SUCCEEDED
         # ------------------------------------------------------------------
@@ -789,24 +851,31 @@ def run_engine_2(page):
         if instagram_id:
             try:
                 from src.core.facebook_client import post_to_instagram
-        
-                # Determine which image to use for Instagram
-                # If we have a local image file, use it (for Gemini/Agnes bytes)
-                # Otherwise try Agnes URL, then Pollinations URL.
-                ig_image = None
-                ig_image_type = None  # 'path', 'url'
+                import requests  # for Graph API call
 
-                # 1. Use local temp file if available (from Gemini or Agnes bytes)
-                if temp_image_path and os.path.exists(temp_image_path):
-                    ig_image = temp_image_path
-                    ig_image_type = 'path'
-                    print(f"📸 Instagram: Using local image file: {temp_image_path}")
-                # 2. Check if Agnes returned a public URL
-                elif agnes_result and agnes_result.get("url"):
+                ig_image = None
+                ig_image_type = None  # 'url' only
+
+                # 1. Use Agnes public URL if available
+                if agnes_result and agnes_result.get("url"):
                     ig_image = agnes_result["url"]
                     ig_image_type = 'url'
                     print(f"📸 Instagram: Using Agnes public URL: {ig_image[:60]}...")
-                # 3. Fallback to Pollinations URL (if image_prompt exists)
+                # 2. If we have a local file, get its public URL from Facebook
+                elif temp_image_path and os.path.exists(temp_image_path):
+                    if post_id:
+                        fb_image_url = get_facebook_image_url(post_id, page["token"])
+                        if fb_image_url:
+                            ig_image = fb_image_url
+                            ig_image_type = 'url'
+                            print(f"📸 Instagram: Using Facebook-hosted image URL: {ig_image[:60]}...")
+                        else:
+                            print("⚠️ Could not retrieve Facebook image URL.")
+                            # Optionally, we could still fall through to Pollinations
+                    else:
+                        print("⚠️ No Facebook post ID to retrieve image from.")
+                        
+                # 3. Fallback to Pollinations URL
                 elif image_prompt:
                     pollinations_url = f"https://image.pollinations.ai/prompt/{image_prompt}"
                     ig_image = pollinations_url
@@ -814,27 +883,21 @@ def run_engine_2(page):
                     print(f"📸 Instagram: Using Pollinations public URL")
                 else:
                     print("⚠️ Instagram SKIPPED: No image source available.")
-                    ig_image = None
 
-                if ig_image:
-                    # Call the Instagram post function
-                    if ig_image_type == 'path':
-                        ig_post_id = post_to_instagram(
-                            ig_user_id=instagram_id,
-                            access_token=page["token"],
-                            caption=formatted_post,
-                            image_path=ig_image,
-                        )
-                    else:  # URL
-                        ig_post_id = post_to_instagram(
-                            ig_user_id=instagram_id,
-                            access_token=page["token"],
-                            caption=formatted_post,
-                            image_url=ig_image,
-                        )
+                if ig_image and ig_image_type == 'url':
+                    ig_post_id = post_to_instagram(
+                        ig_user_id=instagram_id,
+                        access_token=page["token"],
+                        caption=formatted_post,
+                        image_url=ig_image,  # always a public URL
+                    )
                     if ig_post_id:
                         print(f"📸 Instagram posted successfully! ID: {ig_post_id}")
                     else:
                         print("❌ Instagram returned no ID.")
             except Exception as e:
                 print(f"⚠️ Instagram error: {e}")
+
+        # ---- Now clean up the temporary image file (after both Twitter and Instagram) ----
+        if temp_image_path and os.path.exists(temp_image_path):
+            os.remove(temp_image_path)
