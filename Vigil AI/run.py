@@ -462,6 +462,17 @@ document.addEventListener('DOMContentLoaded', function() {
         <input type="text" name="model_name" placeholder="e.g. openai/gpt-oss-120b or claude-sonnet-5">
         <button type="submit" class="btn-success" style="width:100%;">💾 Save API Key</button>
     </form>
+
+    <!-- ===== NEW: Agnes AI Key (Image Generation) ===== -->
+    <hr style="margin: 20px 0;">
+    <form method="POST" action="/add_agnes_key">
+        <label>🖼️ Agnes AI API Key (for image generation)</label>
+        <input type="text" name="agnes_api_key" value="{{ agnes_api_key or '' }}" 
+               placeholder="Enter your Agnes AI API key..." 
+               style="width:100%; padding:8px; margin:5px 0 15px 0; border:1px solid #ccc; border-radius:5px; box-sizing:border-box;">
+        <button type="submit" class="btn-success" style="width:100%;">💾 Save Agnes Key</button>
+    </form>
+
     <div class="provider-list">
         <strong>Saved API Keys:</strong>
         {% for provider, data in api_keys.items() %}
@@ -741,6 +752,7 @@ def index():
         twitter_creds.get("access_token") and
         twitter_creds.get("access_token_secret")
     )
+    agnes_api_key = config.get("agnes_api", {}).get("key", "")
     return render_template_string(
         HTML_TEMPLATE,
         api_keys=config.get("api_keys", {}),
@@ -752,6 +764,7 @@ def index():
         lead_webhook=config.get("lead_webhook_url", ""),
         authorized_users=",".join([str(uid) for uid in config.get("authorized_telegram_users", [])]),
         pinterest=config.get("pinterest_credentials", {}),
+        agnes_api_key=agnes_api_key,
     )
 
 
@@ -790,6 +803,18 @@ def delete_api_key(provider):
     if provider in config.get("api_keys", {}):
         del config["api_keys"][provider]
         save_config(config)
+    return redirect(url_for("index"))
+
+@app.route("/add_agnes_key", methods=["POST"])
+@requires_auth
+def add_agnes_key():
+    config = load_config()
+    agnes_key = request.form.get("agnes_api_key", "").strip()
+    if "agnes_api" not in config:
+        config["agnes_api"] = {}
+    config["agnes_api"]["key"] = agnes_key
+    save_config(config)
+    print(f"✅ Agnes AI key saved.")
     return redirect(url_for("index"))
 
 
